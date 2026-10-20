@@ -259,14 +259,13 @@ def test_tool_can_write_in_own_session_after_paid_response(
 def test_system_prompt_covers_human_decisions_and_nonblocking_jobs() -> None:
     prompt = SYSTEM_PROMPT.lower()
     for phrase in (
-        "structure template",
-        "user approves the script",
-        "user approves the first frames",
-        "user reviews the final video",
-        "never self-approve",
-        "consent_confirmed",
-        "budget confirmation",
-        "do not wait or repeatedly poll",
-        "ai-generated",
+        "reference video",
+        "approve_checkpoint",
+        "exact words",
+        "never approve on your own initiative",
+        "never confirm it yourself",
+        "web_search",
+        "claim queued work finished",
+        "ai-generated watermark",
     ):
         assert phrase in prompt

@@ -24,6 +24,17 @@ from .providers.openai import OpenAIProvider
 Schema = TypeVar("Schema", bound=BaseModel)
 
 
+def _strip_fences(text: str) -> str:
+    """Accept JSON wrapped in a Markdown code fence, which chat models often add."""
+
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
+        if stripped.rstrip().endswith("```"):
+            stripped = stripped.rstrip()[:-3]
+    return stripped.strip()
+
+
 class StructuredOutputError(ValueError):
     """A provider returned invalid data both initially and after one repair."""
 
@@ -62,6 +73,9 @@ class LLMRouter:
                 "openai": OpenAIProvider,
                 "gemini": GeminiProvider,
             }
+            if name == "deepseek":
+                # DeepSeek exposes an OpenAI-compatible Chat Completions API.
+                types["deepseek"] = OpenAIProvider
             if name not in types:
                 raise ProviderConfigurationError(f"Unknown LLM provider: {name!r}")
             key = getattr(self.settings, f"{name}_api_key")
@@ -131,6 +145,36 @@ class LLMRouter:
             )
         return response
 
+    def search(self, query: str, *, project: Project | None = None) -> ChatResponse:
+        """Run a cited web search through the configured search provider."""
+
+        route = self.route("web_search")
+        provider = self._provider(route.provider)
+        if not hasattr(provider, "search"):
+            raise ProviderConfigurationError(
+                f"Provider {route.provider!r} does not support web search"
+            )
+        current_project = project if project is not None else self.project
+        if not isinstance(provider, FakeProvider) and (
+            self.ledger is None or current_project is None
+        ):
+            raise ProviderConfigurationError("Live LLM calls require a project and CostLedger")
+        assert route.model is not None
+        if current_project is not None:
+            acquire_project_budget(current_project)
+            self.budget_guard.check(current_project, 0.0, confirmed=True)
+        response: ChatResponse = provider.search(route.model, query)
+        if self.ledger is not None and current_project is not None:
+            self.ledger.record(
+                current_project,
+                "web_search",
+                route.provider,
+                route.model,
+                response.input_tokens,
+                response.output_tokens,
+            )
+        return response
+
     def structured(
         self,
         role: str,
@@ -154,7 +198,7 @@ class LLMRouter:
                 role, request, project=project, estimated_cost=estimated_cost, confirmed=confirmed
             )
             try:
-                return schema.model_validate_json(response.content)
+                return schema.model_validate_json(_strip_fences(response.content))
             except ValidationError as exc:
                 if attempt == 1:
                     raise StructuredOutputError(

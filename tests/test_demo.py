@@ -154,7 +154,7 @@ def test_offline_demo_real_mp4_incremental_versions_and_cache(
         timeout=30,
     )
     metadata = json.loads(probe.stdout)
-    assert metadata["format"]["tags"]["comment"] == "AI-generated"
+    assert "AI-generated" not in metadata["format"].get("tags", {}).get("comment", "")
     assert 1.4 <= float(metadata["format"]["duration"]) < 2.0
     streams = {stream["codec_type"]: stream for stream in metadata["streams"]}
     assert streams["video"]["codec_name"] == "h264"

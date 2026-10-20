@@ -244,8 +244,8 @@ def test_provider_test_records_usage_and_never_returns_model_text(settings_api):
 
 def test_provider_test_requires_project_and_model(settings_api):
     client, _, fake, _, project_id = settings_api
-    assert client.post("/settings/test/anthropic").status_code == 422
     assert client.post("/settings/test/anthropic", json={"project_id": "absent"}).status_code == 404
+    assert client.put("/settings", json={"gemini_model": None}).status_code == 200
     assert client.post("/settings/test/gemini", json={"project_id": project_id}).status_code == 422
     assert client.post("/settings/test/unknown", json={"project_id": project_id}).status_code == 404
     assert not fake.calls

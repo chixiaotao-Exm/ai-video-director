@@ -556,13 +556,29 @@ def create_app(
                 VIDEO_EXTENSIONS,
                 application.state.max_upload_bytes,
             )
-            return await run_in_threadpool(set_source, project_id, relative)
+            result = await run_in_threadpool(set_source, project_id, relative)
         except BaseException:
             if relative is not None:
                 (root / relative).unlink(missing_ok=True)
             raise
         finally:
             await file.close()
+
+        def start_analysis() -> str | None:
+            from avd.director.tools import DirectorTools
+
+            try:
+                queued = json.loads(
+                    DirectorTools(current_runtime(), project_id).execute("analyze_video", {})
+                )
+            except Exception:
+                _LOGGER.exception("Automatic analysis could not be queued")
+                return None
+            return str(queued.get("job_id")) if queued.get("job_id") else None
+
+        # Upload means "watch this": analysis starts at once and the director reports back.
+        result["analysis_job_id"] = await run_in_threadpool(start_analysis)
+        return result
 
     @application.post("/characters", status_code=201)
     def create_character(body: CharacterInput) -> dict[str, Any]:

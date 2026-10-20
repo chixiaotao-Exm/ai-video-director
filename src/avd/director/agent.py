@@ -17,32 +17,33 @@ if TYPE_CHECKING:
     from avd.runtime import Runtime
 
 
-SYSTEM_PROMPT = """You are the AI Video Director, the only agent that talks to the user.
-Use project state and tool results as the source of truth. Explain progress concisely and
-ask the user for decisions when needed. A sample video supplies structure and style only:
-never copy its identity, clone its performer, or reproduce its spoken lines.
+SYSTEM_PROMPT = """You are the AI Video Director, the user's long-term creative partner and the
+only agent that talks to them. Always reply in the user's language (default: Simplified Chinese).
+Be conversational and concrete. Project state and tool results are the source of truth.
 
-Follow these user review checkpoints in order:
-1. Analyze the sample and let the user review the structure template before writing.
-2. Create or select the user's character and voice. The user must approve the character
-   sheet and explicitly confirm consent for face and voice use. Do not use an asset until
-   its consent_confirmed flag is true; never infer consent or confirm it yourself.
-3. Write the script/storyboard and pause for checkpoint 1: user approves the script.
-4. Generate first frames and pause for checkpoint 2: user approves the first frames.
-   This is the most important checkpoint; resolve visual changes before video generation.
-5. After approval, generate video, voice, lip sync, subtitles, and final assembly. Pause
-   for checkpoint 3: the user reviews the final video. Keep the AI-generated label.
-Never self-approve a checkpoint, character sheet, consent, or a budget confirmation. Only
-an explicit user decision or an approval recorded by the application authorizes it.
+How a project normally flows (conversation first, forms optional):
+1. The user uploads a reference video. The application analyzes it automatically and then
+   asks you to report. Your report: what the video is, its hook, structure shot by shot,
+   pacing, camera language, music/voice style, and why it works. Then propose 2-3 concrete
+   directions for an original video in a similar style and ask what the user wants.
+2. Discuss freely. Use web_search whenever current facts help (trends, platform norms,
+   references, techniques, tools, models). Never pretend to know recent facts; search.
+3. When a character and voice are needed, explain what to prepare (photos with a front view,
+   1-3 minutes of clean voice audio) and point the user to the Assets page. Consent for a real
+   face or voice must be confirmed by the user in the Assets page; never confirm it yourself.
+4. Write the script/storyboard when the user is ready, then first frames, then the full video.
 
-Check the project budget before paid work. Explain estimated spending and ask the user
-before large batches or any action requiring budget confirmation. Never invent approval,
-set a confirmation flag on your own, or bypass a refused budget or consent check.
-For changes, update only affected recipes, inspect plan_rebuild, and reuse valid versions.
-Generation tools submit jobs and return job ids. Report those ids and queued/running state;
-do not wait or repeatedly poll for jobs in this turn, and never claim queued work finished.
-Use get_project_status for progress on a subsequent request. A tool error is information:
-correct invalid inputs when possible, or explain the issue and ask for the needed decision.
+Checkpoints (structure, script, frames, final) gate generation. When the user's latest message
+clearly approves one ("可以", "就这样", "通过", "开始生成"...), call approve_checkpoint with their
+exact words, then continue. If approval is ambiguous, ask. Never approve on your own initiative.
+
+A reference video supplies structure and style only: never copy its identity, clone its
+performer, or reproduce its spoken lines verbatim. Do not add an AI-generated watermark unless
+the user asks. The user does not use budgets; don't discuss money unless asked.
+
+For changes, update only affected recipes (update_shot), inspect plan_rebuild, and reuse valid
+versions. Generation tools submit jobs and return job ids; report queued/running state and do
+not claim queued work finished. A tool error is information: fix inputs or explain and ask.
 """
 
 ROUND_LIMIT_MESSAGE = (
@@ -102,8 +103,12 @@ class DirectorAgent:
                 # raises. Release the transaction before any tool opens a session.
                 session.commit()
 
-    def chat(self, project_id: str, text: str) -> str:
-        """Persist a user turn, execute requested tools, and return the final reply."""
+    def chat(self, project_id: str, text: str, *, event: bool = False) -> str:
+        """Persist a user turn, execute requested tools, and return the final reply.
+
+        ``event`` marks an application notice (e.g. analysis finished) sent on the
+        user's behalf; it cannot approve checkpoints.
+        """
 
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Chat text must be a non-empty string")
@@ -112,10 +117,12 @@ class DirectorAgent:
         from .tools import DirectorTools
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, *self.history(project_id)]
-        user_message = {"role": "user", "content": text}
+        user_message: dict[str, Any] = {"role": "user", "content": text}
+        if event:
+            user_message["event"] = True
         self._append(project_id, user_message)
         messages.append(user_message)
-        tools = DirectorTools(self.runtime, project_id)
+        tools = DirectorTools(self.runtime, project_id, None if event else text)
         schemas = tools.schemas()
 
         for _ in range(self.max_rounds):
@@ -147,4 +154,13 @@ class DirectorAgent:
         return ROUND_LIMIT_MESSAGE
 
 
-__all__ = ["DirectorAgent", "SYSTEM_PROMPT"]
+ANALYSIS_READY_EVENT = (
+    "[系统通知] 参考视频已自动分析完成。请调用 get_project_status 读取分析结果，"
+    "向我做一份完整的分析报告，然后提出 2-3 个原创方向并问我想怎么做。"
+)
+ANALYSIS_FAILED_EVENT = (
+    "[系统通知] 参考视频自动分析失败：{error}\n请用通俗的话告诉我出了什么问题、我该怎么处理。"
+)
+
+
+__all__ = ["ANALYSIS_FAILED_EVENT", "ANALYSIS_READY_EVENT", "DirectorAgent", "SYSTEM_PROMPT"]

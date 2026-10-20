@@ -21,7 +21,13 @@ from avd.state.consent import require_usable
 from avd.state.models import Node, NodeKind, Project
 from avd.state.repo import ProjectRepo
 
-from .review import ReviewRequired, budget_is_confirmed, require_review, review_status
+from .review import (
+    ReviewRequired,
+    approve,
+    budget_is_confirmed,
+    require_review,
+    review_status,
+)
 
 
 class ToolInput(BaseModel):
@@ -91,6 +97,19 @@ class RevertInput(NodeInput):
     version_number: int = Field(ge=1, strict=True)
 
 
+class WebSearchInput(ToolInput):
+    query: str = Field(min_length=2, max_length=2000)
+
+
+class ApproveInput(ToolInput):
+    stage: Literal["structure", "script", "frames", "final"]
+    user_quote: str = Field(
+        min_length=1,
+        max_length=500,
+        description="The exact words from the user's latest message that approve this stage.",
+    )
+
+
 _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
     "analyze_video": (
         EmptyInput,
@@ -117,7 +136,17 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
     "revert": (RevertInput, "Restore a version belonging to this project's node."),
     "list_versions": (NodeInput, "List immutable versions belonging to this project's node."),
     "get_project_status": (EmptyInput, "Read this project's node, review and job progress."),
-    "get_budget": (EmptyInput, "Read budget, spending and costs reserved by pending jobs."),
+    "get_budget": (EmptyInput, "Read token usage, spending and costs reserved by pending jobs."),
+    "web_search": (
+        WebSearchInput,
+        "Search the web for current information (trends, references, techniques, model or "
+        "tool docs). Returns an answer with source URLs. Use it whenever fresh facts help.",
+    ),
+    "approve_checkpoint": (
+        ApproveInput,
+        "Record the user's approval of a checkpoint (structure, script, frames, final) ONLY "
+        "when their latest message clearly approves it; quote their exact words.",
+    ),
 }
 
 _GENERATORS = {
@@ -142,9 +171,12 @@ def project_node(session: Session, project: Project, node_id: str) -> Node:
 
 
 class DirectorTools:
-    def __init__(self, runtime: Any, project_id: str) -> None:
+    def __init__(
+        self, runtime: Any, project_id: str, latest_user_message: str | None = None
+    ) -> None:
         self.runtime = runtime
         self.project_id = project_id
+        self.latest_user_message = latest_user_message
 
     @staticmethod
     def schemas() -> list[dict[str, Any]]:
@@ -213,6 +245,32 @@ class DirectorTools:
                     "message": "Character sheet queued for human review and consent.",
                 }
             )
+        if isinstance(parsed, WebSearchInput):
+            if not self.runtime.settings.web_search_enabled:
+                raise ValueError("Web search is disabled in settings")
+            with self.runtime.session_factory() as session:
+                project = self._project(session)
+                try:
+                    found = self.runtime.router(session, project).search(
+                        parsed.query, project=project
+                    )
+                finally:
+                    session.commit()
+            return found.content or "No results."
+        if isinstance(parsed, ApproveInput):
+            quote = " ".join(parsed.user_quote.split())
+            latest = " ".join((self.latest_user_message or "").split())
+            if not quote or quote not in latest:
+                raise ReviewRequired(
+                    "The quote is not in the user's latest message; ask the user to approve."
+                )
+            with self.runtime.session_factory() as session:
+                project = self._project(session)
+                approval = approve(
+                    session, project, parsed.stage, approved_by=f"chat: {quote}"[:255]
+                )
+                session.commit()
+            return _summary(approval)
         if name in _GENERATORS or name == "rebuild":
             return self._generate(
                 name, retry_failed=isinstance(parsed, RebuildInput) and parsed.retry_failed
@@ -288,6 +346,10 @@ class DirectorTools:
                 result = {
                     "project_id": project.id,
                     "title": project.title,
+                    "source_video": project.source_video_path,
+                    "analysis": project.analysis_result,
+                    "character_id": project.character_id,
+                    "voice_id": project.voice_id,
                     "nodes": [
                         {
                             "id": node.id,

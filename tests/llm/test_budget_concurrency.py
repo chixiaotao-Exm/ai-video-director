@@ -36,7 +36,7 @@ def runtime(tmp_path: Path) -> Iterator[Runtime]:
         Settings(
             _env_file=None,
             data_dir=tmp_path,
-            model_prices={"gpt-6.1-sol": ModelPrice(output_per_million=100000)},
+            model_prices={"gpt-6-astra": ModelPrice(output_per_million=100000)},
             job_estimated_costs={"image_gen": 0.6, "analyze_video": 0.6},
         ),
         providers={"openai": FakeProvider([ChatResponse(content="ok", output_tokens=6)])},
@@ -248,11 +248,11 @@ def test_rejected_direct_accounting_does_not_stage_an_unpaired_ledger_entry(
         project = accounting.get(Project, identifier)
         ledger = CostLedger(accounting, runtime.settings.model_prices)
         with pytest.raises(BudgetBusy):
-            ledger.record(project, "script", "openai", "gpt-6.1-sol", 0, 6)
+            ledger.record(project, "script", "openai", "gpt-6-astra", 0, 6)
         accounting.commit()
         assert not list(decision.scalars(select(CostEntry)))
         decision.rollback()
-        ledger.record(project, "script", "openai", "gpt-6.1-sol", 0, 6)
+        ledger.record(project, "script", "openai", "gpt-6-astra", 0, 6)
         accounting.commit()
         assert project.spent == pytest.approx(0.6)
 

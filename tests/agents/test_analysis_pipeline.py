@@ -64,6 +64,7 @@ def make_pipeline(
         _env_file=None,
         data_dir=tmp_path,
         gemini_model="fake-gemini",
+        analysis_provider="gemini",
         whisper_model="tiny",
         model_prices={"fake-gemini": ModelPrice(input_per_million=1)},
     )
@@ -115,7 +116,8 @@ def test_understand_sends_video_and_structure_only_prompt(tmp_path: Path) -> Non
     video.write_bytes(b"video")
     fake = FakeProvider([template().model_dump_json()])
     router = LLMRouter(
-        Settings(_env_file=None, gemini_model="fake-gemini"), providers={"gemini": fake}
+        Settings(_env_file=None, gemini_model="fake-gemini", analysis_provider="gemini"),
+        providers={"gemini": fake},
     )
     result = understand(
         video,

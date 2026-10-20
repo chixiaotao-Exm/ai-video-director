@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import shutil
+import tempfile
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +22,22 @@ from avd.state.repo import ProjectRepo
 
 from .models import MediaInfo, Segment, ShotSpan, StructureTemplate
 
+_MAX_FRAMES = 16
+
+
+def _frame_times(shots: list[ShotSpan], duration_s: float | None) -> list[float]:
+    """One frame per shot midpoint (evenly thinned), or an even sample without shots."""
+    if shots:
+        times = [(shot.start_s + shot.end_s) / 2 for shot in shots]
+    else:
+        total = duration_s or 10.0
+        count = min(_MAX_FRAMES, max(4, int(total // 3)))
+        times = [total * (index + 0.5) / count for index in range(count)]
+    if len(times) > _MAX_FRAMES:
+        step = len(times) / _MAX_FRAMES
+        times = [times[int(index * step)] for index in range(_MAX_FRAMES)]
+    return times
+
 
 def understand(
     video: str | Path,
@@ -28,45 +46,72 @@ def understand(
     *,
     router: LLMRouter,
     project: Project | None = None,
+    duration_s: float | None = None,
 ) -> StructureTemplate:
-    """Describe structure and style from the actual video, using the analysis role."""
+    """Describe structure and style from the actual video, using the analysis role.
+
+    Gemini receives the whole video. Other providers receive one keyframe per shot
+    plus the timings and transcript, since their chat APIs cannot watch video.
+    """
 
     path = Path(video).resolve()
     context = {
         "shots": [shot.model_dump(mode="json") for shot in shots],
         "transcript": [segment.model_dump(mode="json") for segment in transcript],
     }
+    media: list[dict[str, Any]]
+    frames_dir: Path | None = None
+    if router.route("analysis").provider == "gemini":
+        media = [
+            {
+                "type": "video",
+                "path": str(path),
+                "mime_type": mimetypes.guess_type(path.name)[0] or "video/mp4",
+            }
+        ]
+        intro = "Watch this video and use these timing observations:\n"
+    else:
+        from .media import extract_frames
+
+        frames_dir = Path(tempfile.mkdtemp(prefix="avd-frames-"))
+        times = _frame_times(shots, duration_s)
+        frames = extract_frames(path, times, frames_dir)
+        media = [
+            {"type": "image", "path": str(frame), "mime_type": "image/jpeg"} for frame in frames
+        ]
+        intro = (
+            "These are keyframes in order at seconds "
+            + ", ".join(f"{moment:.1f}" for moment in times[: len(frames)])
+            + " (one per detected shot). Timing observations and transcript:\n"
+        )
     messages: list[dict[str, Any]] = [
         {
             "role": "system",
             "content": (
-                "Analyze the reference video's structure and style only. Describe its "
-                "opening hook (approximately the first 3 seconds), shot durations, shot "
-                "sizes, camera movement, visual composition, pacing, music and voice "
-                "style. For each spoken line describe its purpose, never reproduce the "
-                "verbatim line. Do not identify or clone the person in the reference, "
-                "and do not copy their face, voice identity, distinctive appearance, "
-                "branding or exact creative content. The template will be used to "
-                "create an original video starring separately consented assets."
+                "Analyze the reference video's structure and style only. Describe what the "
+                "video is about (summary), its opening hook (approximately the first 3 "
+                "seconds), shot durations, shot sizes, camera movement, visual composition, "
+                "pacing, music and voice style, and why it works for its audience. For each "
+                "spoken line describe its purpose, never reproduce the verbatim line. Do not "
+                "identify or clone the person in the reference, and do not copy their face, "
+                "voice identity, distinctive appearance, branding or exact creative content. "
+                "The template will be used to create an original video starring separately "
+                "consented assets. Write every text field in Simplified Chinese."
             ),
         },
         {
             "role": "user",
             "content": [
-                {
-                    "type": "text",
-                    "text": "Watch this video and use these timing observations:\n"
-                    + json.dumps(context, ensure_ascii=False),
-                },
-                {
-                    "type": "video",
-                    "path": str(path),
-                    "mime_type": mimetypes.guess_type(path.name)[0] or "video/mp4",
-                },
+                {"type": "text", "text": intro + json.dumps(context, ensure_ascii=False)},
+                *media,
             ],
         },
     ]
-    return router.structured("analysis", messages, StructureTemplate, project=project)
+    try:
+        return router.structured("analysis", messages, StructureTemplate, project=project)
+    finally:
+        if frames_dir is not None:
+            shutil.rmtree(frames_dir, ignore_errors=True)
 
 
 class AnalysisPipeline:
@@ -141,9 +186,19 @@ class AnalysisPipeline:
                 audio, model_size=self.settings.whisper_model
             )
             outputs["audio"] = audio.relative_to(root).as_posix()
-        template = self.understand_step(
-            source, shots, transcript, router=self.router, project=project
-        )
+        if self.understand_step is understand:
+            template = understand(
+                source,
+                shots,
+                transcript,
+                router=self.router,
+                project=project,
+                duration_s=media.duration_s,
+            )
+        else:
+            template = self.understand_step(
+                source, shots, transcript, router=self.router, project=project
+            )
         # Validate injected implementations too; publishing malformed results
         # would otherwise corrupt the project's durable state.
         template = StructureTemplate.model_validate(template)

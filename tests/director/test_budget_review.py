@@ -82,7 +82,7 @@ def test_malformed_tool_response_keeps_usage_in_ledger(tmp_path: Path) -> None:
         Settings(
             _env_file=None,
             data_dir=tmp_path,
-            model_prices={"gpt-6.1-sol": ModelPrice(input_per_million=1, output_per_million=2)},
+            model_prices={"gpt-6-astra": ModelPrice(input_per_million=1, output_per_million=2)},
         )
     )
     with runtime.session_factory() as session:

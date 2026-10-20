@@ -77,20 +77,30 @@ class Settings(BaseSettings):
     comfyui_profiles: dict[str, ComfyUIProfile] = Field(default_factory=_default_comfyui_profiles)
     comfyui_active_profile: str = "local"
     director_model: str = "claude-opus-5-5"
-    script_model: str = "gpt-6.1-sol"
-    qa_model: str = "gpt-6.1-sol"
+    script_model: str = "gpt-6-astra"
+    qa_model: str = "gpt-6-astra"
     image_model: str = "gpt-image-2"
-    gemini_model: str | None = None
+    # Gemini watches whole videos; OpenAI/Anthropic receive extracted keyframes.
+    analysis_provider: Literal["openai", "anthropic", "gemini"] = "openai"
+    analysis_model: str = "gpt-6-astra"
+    gemini_model: str | None = "gemini-2.5-pro"
+    deepseek_model: str = "deepseek-chat"
     anthropic_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
+    deepseek_api_key: SecretStr | None = None
     anthropic_base_url: str | None = None
     openai_base_url: str | None = None
     gemini_base_url: str | None = None
+    deepseek_base_url: str | None = "https://api.deepseek.com"
+    web_search_enabled: bool = True
+    web_search_provider: Literal["openai", "anthropic"] = "openai"
+    web_search_model: str = "gpt-6-astra"
+    ai_label: bool = False
     llm_routes: dict[str, LLMRoute] = Field(default_factory=dict)
     model_prices: dict[str, ModelPrice] = Field(default_factory=dict)
-    confirm_threshold: float = Field(default=1.0, ge=0, allow_inf_nan=False)
-    default_budget_limit: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)
+    confirm_threshold: float | None = Field(default=1.0, ge=0, allow_inf_nan=False)
+    default_budget_limit: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     whisper_model: str = "small"
     workflow_dir: Path | None = None
     job_estimated_costs: dict[str, Annotated[float, Field(ge=0, allow_inf_nan=False)]] = Field(
@@ -149,10 +159,24 @@ class Settings(BaseSettings):
         """Preserve constructor precedence when another process reloads the file."""
         return deepcopy(self._explicit_overrides)
 
-    @field_validator("anthropic_base_url", "openai_base_url", "gemini_base_url", "comfyui_url")
+    @field_validator(
+        "anthropic_base_url",
+        "openai_base_url",
+        "gemini_base_url",
+        "deepseek_base_url",
+        "comfyui_url",
+    )
     @classmethod
     def validate_service_url(cls, value: str | None) -> str | None:
         return _http_base_url(value) if value else None
+
+    @field_validator("anthropic_base_url")
+    @classmethod
+    def strip_anthropic_version(cls, value: str | None) -> str | None:
+        # The Anthropic SDK appends /v1 itself; relays are often entered with it.
+        if value and value.endswith("/v1"):
+            return value[: -len("/v1")]
+        return value
 
     @model_validator(mode="after")
     def derive_database_url(self) -> Settings:
@@ -178,7 +202,19 @@ class Settings(BaseSettings):
             "director": LLMRoute(provider="anthropic", model=self.director_model),
             "script": LLMRoute(provider="openai", model=self.script_model),
             "qa": LLMRoute(provider="openai", model=self.qa_model),
-            "analysis": LLMRoute(provider="gemini", model=self.gemini_model),
+            "analysis": LLMRoute(
+                provider=self.analysis_provider,
+                model=self.gemini_model
+                if self.analysis_provider == "gemini"
+                else self.analysis_model,
+            ),
+            "deepseek": LLMRoute(provider="deepseek", model=self.deepseek_model),
+            "web_search": LLMRoute(
+                provider=self.web_search_provider,
+                model=self.web_search_model
+                if self.web_search_provider == "openai"
+                else self.director_model,
+            ),
         }
         if role in self.llm_routes:
             return self.llm_routes[role]

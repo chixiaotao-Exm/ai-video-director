@@ -238,8 +238,8 @@ def _clip_filters(index: int, info: _VideoInfo, width: int, height: int) -> list
     return [video, f"{audio},atrim=duration={duration},asetpts=PTS-STARTPTS[a{index}]"]
 
 
-def assemble_final(clips: list[Path], dest: Path) -> Path:
-    """Concatenate ordered shots, normalize audio, and visibly disclose AI use.
+def assemble_final(clips: list[Path], dest: Path, *, ai_label: bool = False) -> Path:
+    """Concatenate ordered shots and normalize audio; optionally label AI use.
 
     Output uses the first clip's dimensions (rounded up to even), 30 fps,
     stereo 48 kHz audio, and silence for clips with no audio stream.
@@ -259,7 +259,9 @@ def assemble_final(clips: list[Path], dest: Path) -> Path:
         [
             f"{ordered}concat=n={len(sources)}:v=1:a=1[video][audio]",
             "[video]drawtext=text='AI-generated':fontcolor=white:fontsize=h/24:"
-            "box=1:boxcolor=black@0.6:boxborderw=4:x=w-tw-12:y=h-th-12[vout]",
+            "box=1:boxcolor=black@0.6:boxborderw=4:x=w-tw-12:y=h-th-12[vout]"
+            if ai_label
+            else "[video]null[vout]",
             "[audio]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[aout]",
         ]
     )
@@ -284,8 +286,7 @@ def assemble_final(clips: list[Path], dest: Path) -> Path:
             "48000",
             "-ac",
             "2",
-            "-metadata",
-            "comment=AI-generated",
+            *(["-metadata", "comment=AI-generated"] if ai_label else []),
             "-movflags",
             "+faststart",
             str(output),

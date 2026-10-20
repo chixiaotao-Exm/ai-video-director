@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -11,6 +12,7 @@ from fastapi import Body, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from avd.config import LLMRoute, Settings
+from avd.llm import LLMRouter
 from avd.llm.budget import BudgetExceeded, ConfirmationRequired
 from avd.settings_store import SettingsStore, SettingsStoreError, public_settings
 from avd.state.models import Project
@@ -26,17 +28,33 @@ class ConnectionTestInput(BaseModel):
     profile: str | None = None
 
 
+PROVIDERS = ("anthropic", "openai", "gemini", "deepseek")
+
+
 def _test_model(settings: Settings, provider: str) -> str:
-    role, field = {
-        "anthropic": ("director", "director_model"),
-        "openai": ("script", "script_model"),
-        "gemini": ("analysis", "gemini_model"),
+    field = {
+        "anthropic": "director_model",
+        "openai": "script_model",
+        "gemini": "gemini_model",
+        "deepseek": "deepseek_model",
     }[provider]
-    route = settings.llm_route(role)
-    model = route.model if route.provider == provider else getattr(settings, field)
-    if not model or not model.strip():
+    model = getattr(settings, field)
+    if not model or not str(model).strip():
         raise HTTPException(422, "Configure a model before testing this provider")
     return str(model)
+
+
+def _failure_detail(exc: BaseException, settings: Settings) -> str:
+    """Explain a failed call without echoing credentials."""
+    status = getattr(exc, "status_code", None)
+    text = " ".join(str(exc).split())[:300]
+    for provider in PROVIDERS:
+        secret = getattr(settings, f"{provider}_api_key", None)
+        if secret is not None and secret.get_secret_value():
+            text = text.replace(secret.get_secret_value(), "***")
+    text = re.sub(r"(sk|key)[-_][A-Za-z0-9_-]{6,}", "***", text, flags=re.IGNORECASE)
+    prefix = f"HTTP {status} " if status else ""
+    return f"{prefix}{type(exc).__name__}: {text}"
 
 
 def install_settings_routes(
@@ -114,11 +132,32 @@ def install_settings_routes(
                 )
                 raise HTTPException(502, result) from None
             return record(provider, True, "ComfyUI connection succeeded", name)
-        if provider not in {"anthropic", "openai", "gemini"}:
+        if provider not in PROVIDERS:
             raise HTTPException(404, "Unknown provider")
-        if not body.project_id:
-            raise HTTPException(422, "Select a project to account for this connection test")
         model = _test_model(settings, provider)
+        if not body.project_id:
+            # A tiny unaccounted probe so keys can be checked before any project exists.
+            probe = LLMRouter(settings.model_copy(update={"llm_max_output_tokens": 16}))
+            if runtime.providers:
+                probe.providers = dict(runtime.providers)
+            try:
+                completion = probe._provider(provider).chat(
+                    model, [{"role": "user", "content": "Reply with OK."}]
+                )
+            except Exception as exc:
+                result = record(
+                    provider,
+                    False,
+                    "Provider connection failed: " + _failure_detail(exc, settings),
+                )
+                raise HTTPException(502, result) from None
+            result = record(provider, True, f"Provider connection succeeded ({model})")
+            result.update(
+                model=model,
+                input_tokens=completion.input_tokens,
+                output_tokens=completion.output_tokens,
+            )
+            return result
         with runtime.session_factory() as session:
             project = session.get(Project, body.project_id)
             if project is None:
@@ -141,10 +180,14 @@ def install_settings_routes(
                 raise HTTPException(
                     409, "Project budget or confirmation does not permit this test"
                 ) from None
-            except Exception:
+            except Exception as exc:
                 # A malformed paid response may already have recorded its usage.
                 session.commit()
-                result = record(provider, False, "Provider connection failed; check its settings")
+                result = record(
+                    provider,
+                    False,
+                    "Provider connection failed: " + _failure_detail(exc, settings),
+                )
                 raise HTTPException(502, result) from None
             session.commit()
             result = record(

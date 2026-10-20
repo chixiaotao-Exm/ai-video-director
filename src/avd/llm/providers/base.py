@@ -19,6 +19,8 @@ class ChatResponse(BaseModel):
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     stop_reason: str | None = None
+    # Provider-native blocks (e.g. Anthropic thinking) replayed by that provider only.
+    provider_blocks: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
     def as_message(self) -> dict[str, Any]:
         """Return the canonical assistant message used by all providers."""
@@ -26,6 +28,8 @@ class ChatResponse(BaseModel):
         message: dict[str, Any] = {"role": "assistant", "content": self.content}
         if self.tool_calls:
             message["tool_calls"] = [call.model_dump() for call in self.tool_calls]
+        if self.provider_blocks:
+            message["provider_blocks"] = self.provider_blocks
         return message
 
 

@@ -42,8 +42,10 @@ class ShotTemplate(AnalysisModel):
 
 class StructureTemplate(AnalysisModel):
     total_duration_s: float = Field(gt=0)
+    summary: str = ""
     hook: str = Field(min_length=1)
     shots: list[ShotTemplate] = Field(min_length=1)
     pacing_notes: str = Field(min_length=1)
     music_style: str = Field(min_length=1)
     voice_style: str = Field(min_length=1)
+    why_it_works: str = ""

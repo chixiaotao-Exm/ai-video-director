@@ -109,3 +109,44 @@ def extract_audio(video: Path | str, output_path: Path | str | None = None) -> P
     if not output.is_file() or output.stat().st_size == 0:
         raise MediaProcessingError(f"ffmpeg did not produce audio at {output}")
     return output
+
+
+def extract_frames(
+    video: Path | str,
+    times_s: list[float],
+    output_dir: Path | str,
+    *,
+    width: int = 768,
+) -> list[Path]:
+    """Save one JPEG per timestamp, scaled to ``width``, for vision models."""
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    frames: list[Path] = []
+    for index, moment in enumerate(times_s, start=1):
+        output = destination / f"frame_{index:03d}.jpg"
+        _run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                f"{max(moment, 0.0):.3f}",
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                "-vf",
+                f"scale={width}:-2",
+                "-q:v",
+                "4",
+                str(output),
+            ],
+            timeout=120,
+        )
+        if output.is_file() and output.stat().st_size > 0:
+            frames.append(output)
+    if not frames:
+        raise MediaProcessingError(f"ffmpeg did not extract any frames from {video}")
+    return frames

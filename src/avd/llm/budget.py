@@ -117,6 +117,13 @@ def acquire_project_budget(project: Project) -> None:
     state = inspect(project)
     if session is None or not state.persistent:
         return
+    if not state.attrs.budget_limit.history.has_changes():
+        with session.no_autoflush:
+            session.refresh(project, ["budget_limit"])
+    if project.budget_limit is None:
+        # Unlimited projects have no spending decision to serialize; locking
+        # would only make chat fail while a long job holds the project.
+        return
     locks = session.info.setdefault(_LOCKS_KEY, {})
     if project.id not in locks:
         locks[project.id] = _acquire_lock(session, project.id)
@@ -138,8 +145,9 @@ def _validate_cost(value: float) -> None:
 
 
 class BudgetGuard:
-    def __init__(self, confirm_threshold: float = 1.0) -> None:
-        _validate_cost(confirm_threshold)
+    def __init__(self, confirm_threshold: float | None = 1.0) -> None:
+        if confirm_threshold is not None:
+            _validate_cost(confirm_threshold)
         self.confirm_threshold = confirm_threshold
 
     def check(
@@ -159,7 +167,11 @@ class BudgetGuard:
                 f"Estimated cost ${estimated_cost:.6f} exceeds project remaining "
                 f"budget ${project.budget_limit - spent:.6f}"
             )
-        if estimated_cost > self.confirm_threshold and not confirmed:
+        if (
+            self.confirm_threshold is not None
+            and estimated_cost > self.confirm_threshold
+            and not confirmed
+        ):
             raise ConfirmationRequired(
                 f"Estimated cost ${estimated_cost:.6f} exceeds confirmation "
                 f"threshold ${self.confirm_threshold:.6f}"

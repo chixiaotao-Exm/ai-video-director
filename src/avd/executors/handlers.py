@@ -264,7 +264,9 @@ def build_registry(
             for item in sorted(items, key=lambda item: item["shot_index"])
         ]
         execution.prepare()
-        output = assemble_final(clips, execution.output_dir / "final.mp4")
+        output = assemble_final(
+            clips, execution.output_dir / "final.mp4", ai_label=settings.ai_label
+        )
         return execution.result({"final": output}, duration_s=media_duration(output))
 
     registry.register("image_gen", image_gen)

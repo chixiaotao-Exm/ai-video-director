@@ -38,13 +38,13 @@ def test_default_role_routing_and_overrides() -> None:
     openai = FakeProvider(["script", "qa"])
     gemini = FakeProvider(["analysis"])
     router = LLMRouter(
-        Settings(_env_file=None, gemini_model="configured-gemini"),
+        Settings(_env_file=None, gemini_model="configured-gemini", analysis_provider="gemini"),
         providers={"anthropic": anthropic, "openai": openai, "gemini": gemini},
     )
     for role in ("director", "script", "qa", "analysis"):
         assert router.chat(role, [{"role": "user", "content": "hello"}]).content == role
     assert anthropic.calls[0]["model"] == "claude-opus-5-5"
-    assert [call["model"] for call in openai.calls] == ["gpt-6.1-sol", "gpt-6.1-sol"]
+    assert [call["model"] for call in openai.calls] == ["gpt-6-astra", "gpt-6-astra"]
     assert gemini.calls[0]["model"] == "configured-gemini"
     custom = Settings(
         _env_file=None, llm_routes={"script": LLMRoute(provider="anthropic", model="relay-model")}
@@ -56,6 +56,7 @@ def test_environment_configures_models_and_relay(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("AVD_SCRIPT_MODEL", "configured-script")
     monkeypatch.setenv("AVD_OPENAI_BASE_URL", "https://relay.invalid/v1")
     monkeypatch.setenv("AVD_GEMINI_MODEL", "configured-analysis")
+    monkeypatch.setenv("AVD_ANALYSIS_PROVIDER", "gemini")
     settings = Settings(_env_file=None)
     router = LLMRouter(settings)
     provider = router._provider("openai")
@@ -67,7 +68,10 @@ def test_environment_configures_models_and_relay(monkeypatch: pytest.MonkeyPatch
 
 def test_missing_analysis_model_fails_before_provider_call() -> None:
     fake = FakeProvider(["unused"])
-    router = LLMRouter(Settings(_env_file=None, gemini_model=None), providers={"gemini": fake})
+    router = LLMRouter(
+        Settings(_env_file=None, gemini_model=None, analysis_provider="gemini"),
+        providers={"gemini": fake},
+    )
     with pytest.raises(ProviderConfigurationError, match="AVD_GEMINI_MODEL"):
         router.chat("analysis", [])
     assert fake.calls == []
@@ -89,7 +93,7 @@ def test_structured_repairs_once_without_mutating_messages(session: Session) -> 
         ]
     )
     ledger = CostLedger(
-        session, {"gpt-6.1-sol": ModelPrice(input_per_million=2, output_per_million=4)}
+        session, {"gpt-6-astra": ModelPrice(input_per_million=2, output_per_million=4)}
     )
     router = LLMRouter(
         Settings(_env_file=None), providers={"openai": fake}, ledger=ledger, project=project
@@ -195,7 +199,7 @@ def test_repair_rechecks_budget_after_first_response(session: Session) -> None:
         Settings(_env_file=None),
         providers={"openai": fake},
         project=project,
-        ledger=CostLedger(session, {"gpt-6.1-sol": ModelPrice(input_per_million=1)}),
+        ledger=CostLedger(session, {"gpt-6-astra": ModelPrice(input_per_million=1)}),
     )
     with pytest.raises(BudgetExceeded):
         router.structured("script", [], ResponseSchema, estimated_cost=0.01)

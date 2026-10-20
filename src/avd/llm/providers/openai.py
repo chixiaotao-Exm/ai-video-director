@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+import base64
 import importlib
 import json
+import mimetypes
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from .base import ChatResponse, ProviderConfigurationError, ProviderResponseError, ToolCall
+
+
+def _content(content: Any) -> Any:
+    if not isinstance(content, list):
+        return content
+    converted: list[dict[str, Any]] = []
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == "image" and "path" in item:
+            path = Path(item["path"])
+            media_type = item.get("mime_type") or mimetypes.guess_type(path.name)[0] or "image/jpeg"
+            data = base64.standard_b64encode(path.read_bytes()).decode("ascii")
+            converted.append(
+                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{data}"}}
+            )
+        elif isinstance(item, dict) and item.get("type") == "video":
+            raise ProviderConfigurationError("OpenAI chat models cannot watch video; send frames")
+        else:
+            converted.append(item)
+    return converted
 
 
 class OpenAIProvider:
@@ -46,6 +68,9 @@ class OpenAIProvider:
     ) -> ChatResponse:
         converted = deepcopy(messages)
         for message in converted:
+            message.pop("provider_blocks", None)
+            message.pop("event", None)
+            message["content"] = _content(message.get("content", ""))
             if "tool_calls" in message:
                 message["tool_calls"] = [
                     {
@@ -98,6 +123,33 @@ class OpenAIProvider:
                 "Invalid tool arguments in completed OpenAI response", response
             ) from exc
         return response
+
+    def search(self, model: str, query: str) -> ChatResponse:
+        """Answer a query with the Responses API web_search tool, citing sources."""
+
+        result = self._get_client().responses.create(
+            model=model,
+            input=query,
+            tools=[{"type": "web_search"}],
+            max_output_tokens=self.max_output_tokens,
+        )
+        sources: list[str] = []
+        for item in result.output:
+            for part in getattr(item, "content", None) or []:
+                for note in getattr(part, "annotations", None) or []:
+                    url = getattr(note, "url", None)
+                    if url and url not in sources:
+                        sources.append(url)
+        text = result.output_text or ""
+        if sources:
+            text += "\n\nSources:\n" + "\n".join(f"- {url}" for url in sources[:10])
+        usage = result.usage
+        return ChatResponse(
+            content=text,
+            input_tokens=usage.input_tokens if usage else 0,
+            output_tokens=usage.output_tokens if usage else 0,
+            stop_reason=getattr(result, "status", None),
+        )
 
 
 __all__ = ["OpenAIProvider"]

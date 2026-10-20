@@ -258,7 +258,7 @@ def test_final_orders_every_subtitled_shot_and_ignores_ancestors(
 ) -> None:
     captured = []
 
-    def assemble(clips: list[Path], dest: Path) -> Path:
+    def assemble(clips: list[Path], dest: Path, **_: object) -> Path:
         captured.extend(path.name for path in clips)
         dest.write_bytes(b"final")
         return dest

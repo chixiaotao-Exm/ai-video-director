@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     from avd.config import Settings
 
 
-SECRET_FIELDS = frozenset({"anthropic_api_key", "openai_api_key", "gemini_api_key"})
+SECRET_FIELDS = frozenset(
+    {"anthropic_api_key", "openai_api_key", "gemini_api_key", "deepseek_api_key"}
+)
 READ_ONLY_FIELDS = frozenset({"data_dir", "database_url"})
 _PREVIEW: ContextVar[tuple[Path, dict[str, Any]] | None] = ContextVar(
     "avd_settings_preview", default=None

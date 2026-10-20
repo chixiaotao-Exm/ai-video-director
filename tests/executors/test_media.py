@@ -199,7 +199,7 @@ def test_final_concatenates_in_order_normalizes_and_labels(
         return SimpleNamespace(stdout="")
 
     monkeypatch.setattr(media.subprocess, "run", run)
-    assert media.assemble_final([first, second], output) == output
+    assert media.assemble_final([first, second], output, ai_label=True) == output
     arguments = calls[-1]
     inputs = [arguments[index + 1] for index, argument in enumerate(arguments) if argument == "-i"]
     assert inputs == [str(first.resolve()), str(second.resolve())]
@@ -326,7 +326,7 @@ def test_real_ffmpeg_subtitles_and_mixed_audio_assembly(tmp_path: Path) -> None:
         [("A short line", media.media_duration(first))], tmp_path / "captions.srt"
     )
     burned = media.burn_subtitles(first, subtitles, tmp_path / "burned.mp4")
-    output = media.assemble_final([burned, second], tmp_path / "final.mp4")
+    output = media.assemble_final([burned, second], tmp_path / "final.mp4", ai_label=True)
     assert media.media_duration(output) == pytest.approx(2, abs=0.15)
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(output)],
@@ -342,3 +342,22 @@ def test_real_ffmpeg_subtitles_and_mixed_audio_assembly(tmp_path: Path) -> None:
     assert (video["width"], video["height"]) == (160, 90)
     assert audio["sample_rate"] == "48000"
     assert audio["channels"] == 2
+
+
+def test_final_has_no_ai_label_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"clip")
+    calls: list[list[str]] = []
+
+    def run(arguments: list[str], **_: object) -> SimpleNamespace:
+        calls.append(arguments)
+        if arguments[0] == "ffprobe":
+            return SimpleNamespace(stdout=_metadata("1"))
+        Path(arguments[-1]).write_bytes(b"final")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(media.subprocess, "run", run)
+    media.assemble_final([clip], tmp_path / "final.mp4")
+    filters = calls[-1][calls[-1].index("-filter_complex") + 1]
+    assert "drawtext" not in filters
+    assert "comment=AI-generated" not in calls[-1]

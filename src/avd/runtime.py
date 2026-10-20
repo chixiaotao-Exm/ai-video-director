@@ -197,6 +197,15 @@ class Runtime:
 
         registry.register("analyze_video", authoring)
         registry.register("write_script", authoring)
+
+        def director_report(job: Job) -> dict[str, Any]:
+            from avd.director.agent import DirectorAgent
+
+            assert job.project_id is not None
+            reply = DirectorAgent(self).chat(job.project_id, job.payload["text"], event=True)
+            return {"summary": "Director reported", "reply": reply[:2000]}
+
+        registry.register("director_report", director_report)
         from avd.assets.sheets import make_sheet_handler
 
         registry.register("character_sheet", make_sheet_handler(self, guard(sheet_image_handler)))
@@ -212,7 +221,7 @@ class Runtime:
         registry = HandlerRegistry()
         handler = RuntimeJobHandler(self.settings)
         job_types = {value[1] for value in JOB_TYPES.values()}
-        job_types.update({"analyze_video", "write_script", "character_sheet"})
+        job_types.update({"analyze_video", "write_script", "character_sheet", "director_report"})
         for job_type in job_types:
             registry.register(job_type, handler)
         return Worker(
@@ -268,10 +277,33 @@ class Runtime:
                 confirmed=budget_is_confirmed(session, project, estimate + reserved),
             )
 
+    def _report_analysis(self, job: Job) -> None:
+        """Ask the director to report once analysis finally succeeds or fails."""
+        if job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED}:
+            return  # A failed attempt that will be retried.
+        from avd.director.agent import ANALYSIS_FAILED_EVENT, ANALYSIS_READY_EVENT
+
+        if job.status == JobStatus.SUCCEEDED:
+            text = ANALYSIS_READY_EVENT
+        else:
+            error = (job.error or "unknown error").strip().splitlines()
+            text = ANALYSIS_FAILED_EVENT.format(error=(error[-1] if error else "")[:500])
+        self.queue.submit(
+            "api",
+            "director_report",
+            {"project_id": job.project_id, "text": text},
+            project_id=job.project_id,
+            model_key=self.settings.director_model,
+            max_attempts=2,
+        )
+
     def on_finished(self, job: Job) -> None:
         """Publish generation nodes or account a global character-sheet attempt."""
         if job.node_id:
             self.engine.on_finished(job)
+            return
+        if job.job_type == "analyze_video" and job.project_id:
+            self._report_analysis(job)
             return
         if job.job_type != "character_sheet" or not job.project_id:
             return
