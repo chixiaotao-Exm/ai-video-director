@@ -1,0 +1,14 @@
+# Canonical model download manifest. T15 research supplies optional model choices.
+# No weights are downloaded until you explicitly add entries below.
+# Each target is a DIRECTORY relative to COMFYUI_DIR/models.
+# filename is optional; otherwise the URL path basename is used (query ignored).
+# sha256 is optional; supply a publisher-verified SHA-256 whenever available.
+# HF_TOKEN is read from the shell environment, never from this file.
+#
+# models:
+#   - name: My reviewed model
+#     url: https://huggingface.co/OWNER/REPOSITORY/resolve/COMMIT/model.safetensors
+#     target: diffusion_models
+#     filename: model.safetensors
+#     sha256: REPLACE_WITH_64_HEX_CHARACTERS_FROM_THE_PUBLISHER
+models: []

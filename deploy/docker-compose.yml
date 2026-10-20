@@ -1,0 +1,46 @@
+# Run from the repository root: docker compose -f deploy/docker-compose.yml up --build -d
+# Host networking: Linux, or Docker Desktop with host networking explicitly enabled.
+x-avd: &avd
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  image: avd:local
+  init: true
+  restart: unless-stopped
+  network_mode: host
+  env_file:
+    - ../.env
+  environment:
+    AVD_DATA_DIR: /data
+    AVD_DATABASE_URL: sqlite:////data/state.db
+    AVD_WORKFLOW_DIR: /app/workflows
+  volumes:
+    - avd-data:/data
+    - ../workflows:/app/workflows:ro
+  stop_grace_period: 10m
+
+x-worker: &worker
+  <<: *avd
+  depends_on:
+    app:
+      condition: service_healthy
+  # The image's HTTP probe belongs to the app, not a worker process.
+  healthcheck:
+    disable: true
+
+services:
+  app:
+    <<: *avd
+    command: ["avd", "serve", "--host", "127.0.0.1", "--port", "8000"]
+  worker:
+    <<: *worker
+    command: ["avd", "worker", "--lane", "gpu"]
+  worker-api:
+    <<: *worker
+    command: ["avd", "worker", "--lane", "api"]
+  worker-cpu:
+    <<: *worker
+    command: ["avd", "worker", "--lane", "cpu"]
+
+volumes:
+  avd-data:

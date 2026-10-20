@@ -123,3 +123,11 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** A new CLI framework or separate business logic; rejected to keep command behavior aligned with HTTP/director gates.
 - **Decision:** CLI generation retains human approvals from the web workflow. Worker commands run one selected lane and support explicit recovery; no model is called by project/asset/status/version commands.
 - **Alternatives:** Silently auto-approve in CLI; rejected because user checkpoints must remain enforced.
+
+## T14
+
+- **Date:** 2026-10-20
+- **Decision:** GPU setup defaults to CUDA 13.0 PyTorch wheels, which meet the requested CUDA12.8+ baseline and current ComfyUI instructions. The index and checkout revision remain configurable; a real CUDA tensor operation verifies the selected host/driver.
+- **Alternatives:** Force an obsolete CUDA12.8 index against current ComfyUI; rejected after official documentation verification.
+- **Decision:** ComfyUI and the app bind loopback. Compose uses host networking for a host SSH tunnel and starts separate GPU/API/CPU workers sharing one database volume. Models are an explicit manifest choice, never guessed or downloaded by tests.
+- **Alternatives:** Public ComfyUI ports or container loopback on an isolated bridge; rejected for exposure and connection correctness.

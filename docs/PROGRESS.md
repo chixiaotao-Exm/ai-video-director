@@ -100,3 +100,10 @@
 - Added the `avd` console entry point and all requested project, asset, consent, analysis, chat, rebuild, version, job, worker and serve commands.
 - Reused Runtime/DirectorTools with JSON output, safe imported/uploaded paths, explicit budgets and existing approval gates.
 - Tests: 420 passed, 2 skipped (Windows symlink capability); Ruff/format/mypy green. Confirmed the console entry point installs in .venv.
+
+## T14 — rented GPU deployment kit
+
+- Added idempotent Ubuntu setup, driver/CUDA checks, configurable custom nodes and model downloads, protected HF-token handling, loopback systemd/tmux service and SSH instructions.
+- Added non-root app Docker image, app plus GPU/API/CPU Compose services, persistent volume and local health gating.
+- Verification: bash -n, guarded dry-run, manifest/downloader contracts; 425 tests passed, 2 skipped, Ruff/format/mypy green. No real GPU installation or Docker image build was performed.
+- Operator still needs a suitable rented host/driver and reviewed models/workflows. Deployment variables documented in .env.example and the GPU guide.

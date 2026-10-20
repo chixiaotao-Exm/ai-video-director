@@ -145,3 +145,13 @@ avd serve --host 127.0.0.1 --port 8000
 ```
 
 全局 `--data-dir` / `--database-url` 位于子命令之前。`analyze` 会把本地视频复制进 uploads 后入队；不指定项目时新建项目，`--budget` 设置该项目额度。资产创建使用 `data_dir/uploads` 内的相对文件路径（可通过网页上传）。资产绑定与版本审批继续在网页完成；CLI 重建不会绕过这些检查点。`chat` 输入 `/quit` 退出。`worker --once` 执行一个任务，`--recover-stale` 是停止旧 worker 后的强制恢复选项。
+
+## GPU 与容器部署
+
+租用 Ubuntu GPU、安装 ComfyUI、SSH 隧道、模型清单、Docker/Compose 和关机停止计费步骤见 [deploy/gpu-server/README.md](deploy/gpu-server/README.md)。默认安装脚本只开回环地址；模型清单需在核对许可后选择。
+
+```text
+docker compose -f deploy/docker-compose.yml up --build -d
+```
+
+Compose 使用 host networking，面向 Linux 或启用了 host networking 的 Docker Desktop，以便访问主机上的 SSH 隧道。数据库与媒体在独立 named volume 中；不要用删除 volume 的方式停止服务。
