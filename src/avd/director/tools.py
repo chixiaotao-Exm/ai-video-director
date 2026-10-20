@@ -102,6 +102,14 @@ class WebSearchInput(ToolInput):
     query: str = Field(min_length=2, max_length=2000)
 
 
+class SeparateInput(ToolInput):
+    source: str = Field(
+        default="reference",
+        max_length=1024,
+        description='"reference" for this project\'s reference video, or an uploaded video path.',
+    )
+
+
 class MindMapInput(ToolInput):
     nodes: list[mindmap.MindMapItem] = Field(default_factory=list, max_length=40)
     remove: list[str] = Field(default_factory=list, max_length=40)
@@ -147,6 +155,11 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
         WebSearchInput,
         "Search the web for current information (trends, references, techniques, model or "
         "tool docs). Returns an answer with source URLs. Use it whenever fresh facts help.",
+    ),
+    "separate_audio_video": (
+        SeparateInput,
+        "Split a video into a silent video track and an audio track and save both to the "
+        "asset library (媒体素材), e.g. to reuse the music or study the picture alone.",
     ),
     "update_mindmap": (
         MindMapInput,
@@ -270,6 +283,30 @@ class DirectorTools:
                 finally:
                     session.commit()
             return found.content or "No results."
+        if isinstance(parsed, SeparateInput):
+            from avd.assets.media import asset_data, separate
+
+            root = self.runtime.settings.data_dir.expanduser().resolve()
+            with self.runtime.session_factory() as session:
+                project = self._project(session)
+                if parsed.source == "reference":
+                    if not project.source_video_path:
+                        raise ValueError("This project has no reference video yet")
+                    relative = project.source_video_path
+                else:
+                    relative = (
+                        Path(self._uploaded_path(parsed.source)).resolve().relative_to(root)
+                    ).as_posix()
+                created = separate(
+                    session, root, relative, name=project.title, project_id=project.id
+                )
+                session.commit()
+                return _summary(
+                    {
+                        "assets": [asset_data(asset) for asset in created],
+                        "message": "Saved to the asset library under 媒体素材.",
+                    }
+                )
         if isinstance(parsed, MindMapInput):
             with self.runtime.session_factory() as session:
                 project = self._project(session)

@@ -63,6 +63,12 @@ class ProjectInput(InputModel):
     budget_limit: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)
 
 
+class SeparateInput(InputModel):
+    project_id: str | None = None
+    path: str | None = Field(default=None, max_length=1024)
+    name: str | None = Field(default=None, max_length=200)
+
+
 class CharacterInput(InputModel):
     name: str = Field(min_length=1, max_length=255)
     reference_images: dict[str, str]
@@ -602,6 +608,38 @@ def create_app(
         # Upload means "watch this": analysis starts at once and the director reports back.
         result["analysis_job_id"] = await run_in_threadpool(start_analysis)
         return result
+
+    @application.get("/media-assets")
+    def list_media_assets() -> list[dict[str, Any]]:
+        from avd.assets.media import asset_data, list_assets
+
+        with current_runtime().session_factory() as session:
+            return [asset_data(asset) for asset in list_assets(session)]
+
+    @application.post("/media-assets/separate", status_code=201)
+    def separate_media(body: SeparateInput) -> list[dict[str, Any]]:
+        from avd.assets.media import MediaError, asset_data, separate
+
+        root = media_root()
+        with current_runtime().session_factory() as session:
+            project = _project(session, body.project_id) if body.project_id else None
+            relative = body.path or (project.source_video_path if project else None)
+            if not relative:
+                raise HTTPException(422, "Choose a video file or a project with a reference video")
+            source = _safe_path(root, relative, VIDEO_EXTENSIONS)
+            name = body.name or (project.title if project else Path(relative).stem)
+            try:
+                created = separate(
+                    session,
+                    root,
+                    source.relative_to(root).as_posix(),
+                    name=name,
+                    project_id=project.id if project else None,
+                )
+            except MediaError as exc:
+                raise HTTPException(422, str(exc)) from None
+            session.commit()
+            return [asset_data(asset) for asset in created]
 
     @application.post("/characters", status_code=201)
     def create_character(body: CharacterInput) -> dict[str, Any]:

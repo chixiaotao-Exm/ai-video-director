@@ -1,4 +1,4 @@
-import {api, upload} from "../api.js";
+import {api, upload, mediaURL} from "../api.js";
 import {h, button, link, field, input, select, textarea, form, empty, badge, date, dialog, notice, media} from "../components.js";
 import {t} from "../i18n/zh.js";
 
@@ -110,7 +110,7 @@ function createCharacter(ctx) {
 const VOICE_ENGINES = ["cosyvoice", "gpt-sovits", "f5-tts", "fish-speech"];
 const EMOTIONS = ["neutral", "happy", "excited", "calm", "serious", "sad"];
 
-function createVoice(ctx) {
+function createVoice(ctx, preset = null) {
   let modal;
   const engine = select(VOICE_ENGINES.map(value => ({value, label: t(`asset.engineName.${value}`)})), "cosyvoice", {name: "engine", required: true});
   const explain = h("div", {class: "engine-explain"});
@@ -124,7 +124,7 @@ function createVoice(ctx) {
   describe();
   const content = form([
     field(t("asset.name"), input("text", "", {name: "name", required: true, maxlength: 255, placeholder: t("asset.voiceNamePlaceholder")})),
-    field(t("asset.samples"), input("file", "", {name: "samples", required: true, multiple: true, accept: ".wav,.mp3,.m4a,.flac"}), t("asset.samplesHint")),
+    preset ? h("p", {class: "muted"}, `${t("asset.presetSample")} ${preset.name}`) : field(t("asset.samples"), input("file", "", {name: "samples", required: true, multiple: true, accept: ".wav,.mp3,.m4a,.flac"}), t("asset.samplesHint")),
     field(t("asset.engine"), engine, t("asset.engineHint")),
     explain,
     h("details", {}, h("summary", {}, t("asset.voiceAdvanced")), h("div", {class: "form-stack details-content"},
@@ -136,7 +136,7 @@ function createVoice(ctx) {
     )),
     h("p", {class: "muted"}, t("asset.createConsentHint")),
   ], async data => {
-    const sample_paths = [];
+    const sample_paths = preset ? [preset.path] : [];
     for (const file of data.getAll("samples")) {
       if (file instanceof File && file.size) sample_paths.push(await upload(file));
     }
@@ -209,12 +209,51 @@ function assignment(characters, voices, ctx) {
   );
 }
 
+const seconds = value => value ? `${Math.round(value * 10) / 10} 秒` : "";
+
+function separateDialog(ctx) {
+  let modal;
+  const project = (ctx.projects || []).find(item => item.id === ctx.projectId);
+  const useReference = Boolean(project?.source_video_path);
+  const file = input("file", "", {name: "video", accept: ".mp4,.mov,.webm,.mkv,.avi", required: !useReference});
+  const content = form([
+    h("p", {class: "muted"}, t("media.separateHelp")),
+    useReference ? h("p", {}, `${t("media.defaultSource")}「${project.title}」`) : null,
+    field(useReference ? t("media.orUpload") : t("media.chooseVideo"), file),
+    field(t("media.name"), input("text", "", {name: "name", maxLength: 200, placeholder: t("media.namePlaceholder")})),
+  ], async data => {
+    const chosen = data.get("video");
+    const body = {name: String(data.get("name") || "").trim() || null};
+    if (chosen instanceof File && chosen.size) body.path = await upload(chosen);
+    else body.project_id = project.id;
+    notice(t("media.working"));
+    await api("/media-assets/separate", {method: "POST", body});
+    modal.close();
+    notice(t("media.done"));
+    await ctx.reload();
+  }, t("media.separate"));
+  modal = dialog(t("media.separate"), content);
+}
+
+function mediaCard(asset, ctx) {
+  return h("article", {class: "card stack"},
+    h("div", {class: "row spread"}, h("h3", {}, asset.name), badge(asset.kind === "video" ? "running" : "clean", t(`media.kind.${asset.kind}`))),
+    media(asset.path, asset.kind, {preload: "metadata", class: `media media-${asset.kind}`}),
+    h("small", {class: "muted"}, [seconds(asset.duration_s), date(asset.created_at)].filter(Boolean).join(" · ")),
+    h("div", {class: "toolbar"},
+      h("a", {class: "button small", href: mediaURL(asset.path), download: ""}, t("media.download")),
+      asset.kind === "audio" ? button(t("media.useAsVoice"), () => createVoice(ctx, asset), {small: true}) : null,
+    ),
+  );
+}
+
 export async function render(ctx) {
-  const [characters, voices] = await Promise.all([api("/characters", {signal: ctx.signal}), api("/voices", {signal: ctx.signal})]);
+  const [characters, voices, clips] = await Promise.all([api("/characters", {signal: ctx.signal}), api("/voices", {signal: ctx.signal}), api("/media-assets", {signal: ctx.signal})]);
   return h("div", {class: "page assets-page"},
     h("header", {class: "page-header"},
       h("div", {}, h("h1", {}, t("asset.title")), h("p", {class: "muted"}, t("asset.subtitle"))),
       h("div", {class: "toolbar"},
+        button(t("media.separate"), () => separateDialog(ctx)),
         button(t("asset.generateSheet"), () => generateSheet(ctx)),
         button(t("asset.createVoice"), () => createVoice(ctx)),
         button(t("asset.createCharacter"), () => createCharacter(ctx), {primary: true}),
@@ -228,6 +267,10 @@ export async function render(ctx) {
     h("section", {class: "page-section"},
       h("div", {class: "section-heading"}, h("h2", {}, t("asset.voices")), h("span", {class: "muted"}, `${voices.length} ${t("asset.items")}`)),
       voices.length ? h("div", {class: "grid-2"}, ...voices.map(asset => voiceCard(asset, ctx))) : empty(t("asset.noVoices"), t("asset.noVoicesHint")),
+    ),
+    h("section", {class: "page-section"},
+      h("div", {class: "section-heading"}, h("h2", {}, t("media.title")), h("span", {class: "muted"}, `${clips.length} ${t("asset.items")}`)),
+      clips.length ? h("div", {class: "grid-2"}, ...clips.map(asset => mediaCard(asset, ctx))) : empty(t("media.empty"), t("media.emptyHint"), button(t("media.separate"), () => separateDialog(ctx), {primary: true})),
     ),
   );
 }

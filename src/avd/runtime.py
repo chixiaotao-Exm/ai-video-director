@@ -61,6 +61,7 @@ class Runtime:
         self.database = None
         if session_factory is None:
             # Register application-layer tables without state importing its consumers.
+            from avd.assets.media import MediaAsset  # noqa: F401
             from avd.director.mindmap import MindMapNode  # noqa: F401
             from avd.director.models import ChatMessage  # noqa: F401
             from avd.director.review import Review  # noqa: F401
