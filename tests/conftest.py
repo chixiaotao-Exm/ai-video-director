@@ -8,6 +8,12 @@ from typing import Any
 import pytest
 
 
+def pytest_sessionstart(session: pytest.Session) -> None:
+    # The configured --basetemp is data/pytest. Pytest creates the final
+    # directory, but needs this ignored parent on a freshly cloned checkout.
+    (Path(__file__).resolve().parents[1] / "data").mkdir(exist_ok=True)
+
+
 @pytest.fixture(autouse=True)
 def forbid_network(monkeypatch: pytest.MonkeyPatch) -> None:
     local = threading.local()

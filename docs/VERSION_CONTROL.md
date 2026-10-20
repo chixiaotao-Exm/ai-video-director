@@ -29,3 +29,5 @@ Git 身份和 GitHub 登录由本机的 Git / GitHub CLI 管理；浏览器服�
 ## 首次远程验证
 
 2026-10-20，已将原有历史及 Studio 变更正常推送至 `origin/main`，远程默认分支为 main。本地与远程 HEAD 均为 `4387d193f418217ca606aae0c2513b3559cae287` 时，GitHub Actions 运行 `39514793703` 成功完成前端可复现构建，但 mypy 发现干净环境缺少可选 NumPy。随后为 analysis extra 声明 NumPy，并与其他可选分析依赖统一缺失导入策略。该失败不被记作 CI 通过；发布标签仅在后续远程检查成功后创建。
+
+第二轮 `39515664222` 的构建和质量检查已通过，暴露新克隆缺少被 Git 忽略的 `data/` 父目录，pytest 无法创建固定的 `data/pytest`。测试会话现在先创建该父目录，不清理任何用户数据，支持直接运行 `python -m pytest -q`。
