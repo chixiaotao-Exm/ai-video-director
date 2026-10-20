@@ -127,6 +127,32 @@ class CheckJobsInput(ToolInput):
     limit: int = Field(default=15, ge=1, le=50)
 
 
+class WatchInput(ToolInput):
+    job_ids: list[str] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Jobs to watch; empty means every queued or running job of this project.",
+    )
+    instructions: str = Field(
+        min_length=1, max_length=1000, description="What you will do once they finish."
+    )
+    name: str = Field(default="盯任务", min_length=1, max_length=40)
+
+
+class DelegateInput(ToolInput):
+    name: str = Field(min_length=1, max_length=40, description="A short role name, e.g. 调研员.")
+    task: str = Field(min_length=1, max_length=4000)
+
+
+class SubAgentMessageInput(ToolInput):
+    agent_id: str = Field(min_length=1, max_length=36)
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class SubAgentRefInput(ToolInput):
+    agent_id: str = Field(min_length=1, max_length=36)
+
+
 class MindMapInput(ToolInput):
     nodes: list[mindmap.MindMapItem] = Field(default_factory=list, max_length=40)
     remove: list[str] = Field(default_factory=list, max_length=40)
@@ -193,6 +219,22 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
         "Send images, video or audio files to the user in the chat (like a messaging app). "
         "Use output paths from check_jobs, list_versions or the asset library.",
     ),
+    "assign_watcher": (
+        WatchInput,
+        "Assign a watcher sub-agent to follow jobs you queued. It reports to you as soon as "
+        "they all finish, so you can send the results without the user asking.",
+    ),
+    "delegate_task": (
+        DelegateInput,
+        "Hand a task to a worker sub-agent with its own model and read-only tools (web "
+        "search, project status, jobs, library). It reports back to you when done.",
+    ),
+    "message_subagent": (
+        SubAgentMessageInput,
+        "Send a follow-up message to a worker sub-agent; its answer comes back as a report.",
+    ),
+    "list_subagents": (EmptyInput, "List this project's sub-agents with status and results."),
+    "stop_subagent": (SubAgentRefInput, "Stop a sub-agent that is no longer needed."),
     "update_mindmap": (
         MindMapInput,
         "Add or update nodes in the live mind map the user watches: insights, options, "
@@ -458,6 +500,10 @@ class DirectorTools:
                         }
                     )
             return _summary(report)
+        if isinstance(
+            parsed, WatchInput | DelegateInput | SubAgentMessageInput | SubAgentRefInput
+        ) or (name == "list_subagents"):
+            return self._subagents(name, parsed)
         if isinstance(parsed, MindMapInput):
             with self.runtime.session_factory() as session:
                 project = self._project(session)
@@ -597,6 +643,52 @@ class DirectorTools:
             session.commit()
             return _summary(result)
 
+    def _subagents(self, name: str, parsed: ToolInput) -> str:
+        from . import subagents
+
+        with self.runtime.session_factory() as session:
+            project = self._project(session)
+            if isinstance(parsed, WatchInput):
+                agent = subagents.create_watcher(
+                    session,
+                    project,
+                    name=parsed.name,
+                    instructions=parsed.instructions,
+                    job_ids=parsed.job_ids or None,
+                )
+                session.commit()
+                return _summary(
+                    {"agent_id": agent.id, "watching": len(agent.job_ids), "status": "watching"}
+                )
+            if isinstance(parsed, DelegateInput):
+                agent, job_id = subagents.create_worker(
+                    self.runtime, session, project, name=parsed.name, task=parsed.task
+                )
+                session.commit()
+                return _summary({"agent_id": agent.id, "job_id": job_id, "status": "working"})
+            if name == "list_subagents":
+                agents = session.scalars(
+                    select(subagents.SubAgent)
+                    .where(subagents.SubAgent.project_id == project.id)
+                    .order_by(subagents.SubAgent.created_at.desc())
+                ).all()
+                return subagents.summary(list(agents))
+            assert isinstance(parsed, SubAgentMessageInput | SubAgentRefInput)
+            agent = session.get(subagents.SubAgent, parsed.agent_id)
+            if agent is None or agent.project_id != project.id:
+                raise KeyError("Sub-agent not found in this project")
+            if isinstance(parsed, SubAgentRefInput):
+                agent.status = "stopped"
+                session.commit()
+                return _summary({"agent_id": agent.id, "status": "stopped"})
+            if agent.kind != "worker":
+                raise ValueError("Only worker sub-agents can be messaged")
+            if agent.status == "working":
+                raise ValueError("That sub-agent is still working; wait for its report")
+            job_id = subagents.submit_worker_turn(self.runtime, session, agent, parsed.message)
+            session.commit()
+            return _summary({"agent_id": agent.id, "job_id": job_id, "status": "working"})
+
     def _authoring(self, session: Session, project: Project, name: str, parsed: ToolInput) -> Any:
         acquire_project_budget(project)
         pending = self._pending(session, project)
@@ -641,6 +733,7 @@ class DirectorTools:
 
     def _generate(self, name: str, *, retry_failed: bool = False) -> str:
         waiting = False
+        gpu_note = ""
         with self.runtime.session_factory() as session:
             project = self._project(session)
             require_review(session, project, "script")
@@ -658,6 +751,25 @@ class DirectorTools:
                 require_review(session, project, "frames")
                 kinds = {_GENERATORS[name]}
             plan = ProjectRepo(session).plan_rebuild(project)
+            gpu_kinds = {NodeKind.SHOT_VIDEO, NodeKind.VOICEOVER, NodeKind.LIPSYNC}
+            if any(node.kind in kinds & gpu_kinds for node in plan):
+                from avd.backends.comfyui import comfyui_status
+
+                profile = self.runtime.settings.comfyui_profile
+                ready, detail = comfyui_status(profile.base_url)
+                if not ready:
+                    if kinds - gpu_kinds and name == "rebuild":
+                        kinds = kinds - gpu_kinds - {NodeKind.SUBTITLES, NodeKind.FINAL}
+                        gpu_note = (
+                            f" ComfyUI is not reachable at {profile.base_url} ({detail}); "
+                            "video, voice, lip-sync and final steps were not queued."
+                        )
+                    else:
+                        raise ValueError(
+                            "ComfyUI is not reachable at "
+                            f"{profile.base_url} ({detail}). Video, voice and lip-sync "
+                            "need a running ComfyUI on a GPU server; nothing was queued."
+                        )
             if retry_failed:
                 plan.extend(node for node in project.nodes if node.status == "failed")
             estimate = sum(
@@ -684,7 +796,7 @@ class DirectorTools:
                 else "No new ready work; inspect project status."
             )
         )
-        return _summary({"job_ids": job_ids, "message": message})
+        return _summary({"job_ids": job_ids, "message": message + gpu_note})
 
 
 __all__ = ["DirectorTools", "project_node"]

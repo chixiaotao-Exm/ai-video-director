@@ -597,6 +597,38 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
   return h("section", {class: `chat-panel wechat${compact ? " compact" : ""}`}, log, status, composer);
 }
 
+function agentPanel(ctx, projectId) {
+  const list = h("div", {class: "agent-list"}, paragraph(p("agents.empty")));
+  let signature = "";
+  const open = new Set();
+  async function refresh() {
+    const agents = await api(path(projectId, "/subagents"), {signal: ctx.signal});
+    const next = JSON.stringify(agents.map(agent => [agent.id, agent.status, agent.updated_at]));
+    if (next === signature) return;
+    signature = next;
+    list.querySelectorAll("details[open]").forEach(element => open.add(element.dataset.id));
+    if (!agents.length) { list.replaceChildren(paragraph(p("agents.empty"))); return; }
+    list.replaceChildren(...agents.map(agent => {
+      const busy = ["working", "watching"].includes(agent.status);
+      const item = h("details", {class: "agent-item", "data-id": agent.id},
+        h("summary", {},
+          h("span", {class: "agent-name"}, agent.name),
+          h("span", {class: "agent-kind"}, p(`agents.kind.${agent.kind}`)),
+          h("span", {class: "agent-state"}, busy ? h("span", {class: "pulse", "aria-hidden": "true"}) : null, p(`agents.status.${agent.status}`))),
+        h("div", {class: "agent-body"},
+          h("div", {class: "muted"}, `${p("agents.task")}${agent.instructions}`),
+          agent.kind === "watcher" ? h("div", {class: "muted"}, `${p("agents.watching")}${agent.job_ids.length}`) : null,
+          ...agent.transcript.filter(item => item.content).slice(-6).map(item => h("div", {class: `bubble ${item.role === "user" ? "bubble-me" : "bubble-director"}`}, item.role === "assistant" ? markdown(item.content) : String(item.content))),
+          agent.kind === "watcher" && agent.result ? h("div", {}, agent.result) : null));
+      if (open.has(agent.id)) item.open = true;
+      return item;
+    }));
+  }
+  void refresh().catch(() => {});
+  ctx.poll(refresh, 3000);
+  return panel(p("agents.title"), paragraph(p("agents.help")), list);
+}
+
 async function chat(ctx, project, initialJobs) {
   const panelElement = await chatPanel(ctx, project.id);
   const jobs = liveJobs(project.id, initialJobs);
@@ -605,6 +637,7 @@ async function chat(ctx, project, initialJobs) {
   return h("div", {class: "project-chat-grid"}, panelElement,
     h("aside", {class: "stack"},
       panel(p("tabs.mindmap"), liveMindMap(ctx, project.id, {compact: true}), anchor(p("mindmapFull"), route(project.id, "mindmap"))),
+      agentPanel(ctx, project.id),
       source
         ? panel(p("referenceVideo"), media(source, "video", {preload: "metadata", class: "media media-video reference-player"}))
         : panel(p("referenceVideo"), paragraph(p("noSourceYet")), anchor(p("uploadSource"), route(project.id, "overview"))),

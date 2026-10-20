@@ -583,6 +583,21 @@ def create_app(
             session.commit()
             return _project_data(project)
 
+    @application.get("/projects/{project_id}/subagents")
+    def project_subagents(project_id: str) -> list[dict[str, Any]]:
+        from avd.director.subagents import SubAgent, agent_data
+
+        with current_runtime().session_factory() as session:
+            _project(session, project_id)
+            return [
+                agent_data(agent)
+                for agent in session.scalars(
+                    select(SubAgent)
+                    .where(SubAgent.project_id == project_id)
+                    .order_by(SubAgent.created_at.desc())
+                )
+            ]
+
     @application.get("/projects/{project_id}/mindmap")
     def project_mindmap(project_id: str) -> dict[str, Any]:
         from avd.director import mindmap

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,8 @@ from avd.llm.reservations import reserved_cost
 from avd.observability import configure_logging, log_context
 from avd.state.db import create_engine, create_session_factory, init_db
 from avd.state.models import Node, NodeKind, Project
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,7 @@ class Runtime:
             from avd.director.mindmap import MindMapNode  # noqa: F401
             from avd.director.models import ChatMessage  # noqa: F401
             from avd.director.review import Review  # noqa: F401
+            from avd.director.subagents import SubAgent  # noqa: F401
 
             self.database = create_engine(
                 self.settings.database_url, data_dir=self.settings.data_dir
@@ -208,6 +212,14 @@ class Runtime:
             return {"summary": "Director reported", "reply": reply[:2000]}
 
         registry.register("director_report", director_report)
+
+        def subagent_turn(job: Job) -> dict[str, Any]:
+            from avd.director.subagents import run_worker_turn
+
+            reply = run_worker_turn(self, job.payload["agent_id"])
+            return {"summary": "Sub-agent reported", "reply": reply[:2000]}
+
+        registry.register("subagent_turn", subagent_turn)
         from avd.assets.sheets import make_sheet_handler
 
         registry.register("character_sheet", make_sheet_handler(self, guard(sheet_image_handler)))
@@ -223,7 +235,9 @@ class Runtime:
         registry = HandlerRegistry()
         handler = RuntimeJobHandler(self.settings)
         job_types = {value[1] for value in JOB_TYPES.values()}
-        job_types.update({"analyze_video", "write_script", "character_sheet", "director_report"})
+        job_types.update(
+            {"analyze_video", "write_script", "character_sheet", "director_report", "subagent_turn"}
+        )
         for job_type in job_types:
             registry.register(job_type, handler)
         return Worker(
@@ -300,6 +314,18 @@ class Runtime:
         )
 
     def on_finished(self, job: Job) -> None:
+        """Publish results, then let watchers and the director know (after publishing)."""
+        self._on_finished(job)
+        if job.job_type == "analyze_video":
+            return  # analysis has its own report
+        try:
+            from avd.director.subagents import on_job_finished
+
+            on_job_finished(self, job)
+        except Exception:
+            _LOGGER.exception("Could not notify watchers for job %s", job.id)
+
+    def _on_finished(self, job: Job) -> None:
         """Publish generation nodes or account a global character-sheet attempt."""
         if job.node_id:
             self.engine.on_finished(job)

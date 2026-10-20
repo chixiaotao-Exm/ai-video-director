@@ -27,6 +27,14 @@ from avd.state.models import Character, Node, NodeStatus, Project, Voice
 from avd.state.repo import ProjectRepo
 
 
+@pytest.fixture(autouse=True)
+def comfyui_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GPU steps check ComfyUI first; these tests simulate a running server."""
+    from avd.backends import comfyui
+
+    monkeypatch.setattr(comfyui, "comfyui_status", lambda *args, **kwargs: (True, "ok"))
+
+
 @pytest.fixture
 def harness(tmp_path: Path) -> Any:
     settings = Settings(data_dir=tmp_path, gemini_model="fake-analysis", _env_file=None)
@@ -102,8 +110,8 @@ def finish_frames(harness: Any) -> None:
 
 def test_all_tools_have_closed_input_schemas(harness: Any) -> None:
     schemas = harness.tools.schemas()
-    assert len(schemas) == 24
-    assert len({schema["name"] for schema in schemas}) == 24
+    assert len(schemas) == 29
+    assert len({schema["name"] for schema in schemas}) == 29
     assert all(schema["input_schema"]["additionalProperties"] is False for schema in schemas)
     for schema in schemas:
         assert not {"confirmed", "consent_confirmed", "approved_by", "project_id"} & set(
@@ -307,3 +315,22 @@ def test_read_tools_return_scoped_status_budget_and_version_history(harness: Any
         harness.tools.execute("list_versions", {"node_id": harness.node_ids["script"]})
     )
     assert [version["number"] for version in versions] == [1]
+
+
+def test_gpu_generation_refuses_without_comfyui(
+    harness: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from avd.backends import comfyui
+
+    monkeypatch.setattr(comfyui, "comfyui_status", lambda *args, **kwargs: (False, "refused"))
+    with harness.session_factory() as session:
+        project = session.get(Project, harness.project_id)
+        approve(session, project, "structure", "user")
+        approve(session, project, "script", "user")
+        for node in project.nodes:
+            if node.kind.value == "shot_frame":
+                ProjectRepo(session).record_version(node, {"image": "frame.png"})
+        approve(session, project, "frames", "user")
+        session.commit()
+    with pytest.raises(ValueError, match="ComfyUI is not reachable"):
+        harness.tools.execute("generate_videos", {})

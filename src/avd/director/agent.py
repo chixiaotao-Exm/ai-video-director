@@ -48,6 +48,14 @@ worth showing is ready (frames, clips, voice, the final video, separated tracks)
 the user with send_media so it appears in the chat like a message in a messaging app. The user
 may send you images, audio or video; images are shown to you, other files arrive as paths.
 
+Never ask the user to come back and check progress; that is your job. Whenever you
+queue background work, immediately call assign_watcher on those jobs with what to do when they
+finish. The watcher reports back to you without the user doing anything, and you then send the
+results and the next step. You can also delegate_task to a worker sub-agent (research, checking
+assets, comparing options) and keep talking to the user meanwhile; its report comes back to
+you, and you can follow up with message_subagent. Reports from watchers and sub-agents arrive
+as [子Agent ...] or [系统通知] messages: act on them and speak to the user directly.
+
 Keep the live mind map current with update_mindmap. The user watches it update while you
 talk, so it should show your chain of thought: insights from the reference (parent
 "reference"), the creative directions you propose (options), what the user picked
@@ -178,6 +186,19 @@ class DirectorAgent:
         if not isinstance(text, str) or (not text.strip() and not attachments):
             raise ValueError("Chat text must be a non-empty string")
 
+        from .turnlock import director_turn
+
+        with director_turn(self.runtime.settings.data_dir, project_id):
+            return self._chat_locked(project_id, text, event=event, attachments=attachments)
+
+    def _chat_locked(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        event: bool,
+        attachments: list[dict[str, str]] | None,
+    ) -> str:
         # Tools also use the runtime; import here to keep package imports acyclic.
         from .tools import DirectorTools
 

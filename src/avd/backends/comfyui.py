@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -71,7 +71,12 @@ class ComfyUIClient:
         self.timeout = timeout
         self.client_id = client_id or uuid.uuid4().hex
         self._owns_client = client is None
-        self._client = client or httpx.Client(timeout=timeout, transport=transport)
+        # A local ComfyUI or SSH tunnel must never be sent through a system proxy.
+        host = (urlsplit(normalized).hostname or "").lower()
+        local = host in {"localhost", "127.0.0.1", "::1"}
+        self._client = client or httpx.Client(
+            timeout=timeout, transport=transport, trust_env=not local
+        )
 
     def close(self) -> None:
         if self._owns_client:
@@ -333,3 +338,17 @@ __all__ = [
     "ComfyUIProtocolError",
     "ComfyUITimeoutError",
 ]
+
+
+def comfyui_status(base_url: str, timeout: float = 4.0) -> tuple[bool, str]:
+    """Whether a ComfyUI server answers at ``base_url`` (checked before GPU work)."""
+    host = (urlsplit(base_url).hostname or "").lower()
+    try:
+        with httpx.Client(
+            timeout=timeout, trust_env=host not in {"localhost", "127.0.0.1", "::1"}
+        ) as client:
+            response = client.get(f"{base_url.rstrip('/')}/system_stats")
+            response.raise_for_status()
+        return True, "ok"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {' '.join(str(exc).split())[:160]}"
