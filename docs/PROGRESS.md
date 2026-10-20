@@ -107,3 +107,11 @@
 - Added non-root app Docker image, app plus GPU/API/CPU Compose services, persistent volume and local health gating.
 - Verification: bash -n, guarded dry-run, manifest/downloader contracts; 425 tests passed, 2 skipped, Ruff/format/mypy green. No real GPU installation or Docker image build was performed.
 - Operator still needs a suitable rented host/driver and reviewed models/workflows. Deployment variables documented in .env.example and the GPU guide.
+
+## T15 — model research and reproducible downloads
+
+- Researched four video, four voice and three lipsync candidate families using primary sources dated 2026-10-20. Documented memory evidence, commercial restrictions, auxiliary licenses and Blackwell/custom-node caveats.
+- Added opt-in none/draft12/balanced24/quality48 profiles with 19 revision-pinned baseline files and published SHA-256 checks on binary weights; all tiers begin with the same permissive baseline.
+- Added validated, atomic HTTPS downloads and offline profile/hash/token/redirect/failure tests. No model weights were downloaded.
+- Verification: 445 passed, 2 skipped (Windows symlink permissions), 1 upstream TestClient warning; Ruff lint/format, mypy and Bash syntax green.
+- Remaining external gaps: real GPU/custom-node validation, complete auxiliary models and licenses, and exported ComfyUI workflows. T16 addresses observability and the concurrently discovered LLM budget race.

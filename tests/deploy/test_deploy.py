@@ -100,15 +100,17 @@ def test_setup_preview_precedes_gpu_and_all_listeners_are_private() -> None:
     assert "0.0.0.0" not in setup
 
 
-def test_embedded_downloader_is_valid_python_and_uses_model_manifest() -> None:
+def test_downloader_is_valid_python_and_uses_model_manifest() -> None:
     setup = SETUP.read_text(encoding="utf-8")
-    source = setup.split("<<'DOWNLOAD_MODELS'\n", 1)[1].split("\nDOWNLOAD_MODELS", 1)[0]
+    source = (DEPLOY / "gpu-server" / "download_models.py").read_text(encoding="utf-8")
     ast.parse(source)
+    assert '"$SCRIPT_DIR/download_models.py"' in setup
+    assert '"$MODEL_PROFILE"' in setup
     assert "yaml.safe_load" in source
-    assert 'entry["url"]' in source and 'entry["target"]' in source
+    assert 'entry.get("url")' in source and 'entry.get("target")' in source
     assert 'entry.get("sha256")' in source
     assert 'os.environ["HF_TOKEN"]' in source
-    assert 'parsed.hostname == "huggingface.co"' in source
+    assert 'hostname == "huggingface.co"' in source
     assert 'add_unredirected_header("Authorization"' in source
     assert "os.replace(temporary, destination)" in source
     manifest = (DEPLOY / "gpu-server" / "models.yaml").read_text(encoding="utf-8")

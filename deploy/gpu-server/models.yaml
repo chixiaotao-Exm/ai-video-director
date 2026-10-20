@@ -1,14 +1,114 @@
-# Canonical model download manifest. T15 research supplies optional model choices.
-# No weights are downloaded until you explicitly add entries below.
-# Each target is a DIRECTORY relative to COMFYUI_DIR/models.
-# filename is optional; otherwise the URL path basename is used (query ignored).
-# sha256 is optional; supply a publisher-verified SHA-256 whenever available.
-# HF_TOKEN is read from the shell environment, never from this file.
-#
-# models:
-#   - name: My reviewed model
-#     url: https://huggingface.co/OWNER/REPOSITORY/resolve/COMMIT/model.safetensors
-#     target: diffusion_models
-#     filename: model.safetensors
-#     sha256: REPLACE_WITH_64_HEX_CHARACTERS_FROM_THE_PUBLISHER
-models: []
+# Opt-in baseline model downloads, researched 2026-10-20; see docs/MODELS.md.
+# MODEL_PROFILE defaults to none. Explicit choices: draft12, balanced24, quality48.
+# All three tiers intentionally share the same baseline; tier names are not benchmarks.
+# target is a DIRECTORY relative to COMFYUI_DIR/models. Node paths may need configuring.
+# Weight sha256 values come from publisher LFS metadata; small configs pin Git revisions.
+# HF_TOKEN is read only from the environment; never add credentials here.
+# MuseTalk auxiliaries are NOT included; review upstream dependencies and their licenses.
+# CosyVoice optional RL, batch and optimized ONNX variants are NOT included.
+models:
+  - name: Wan2.2 TI2V-5B / split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/ee6f4a40737a995bf5818954cfce6d59443b0f04/split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors
+    target: diffusion_models
+    filename: wan2.2_ti2v_5B_fp16.safetensors
+    sha256: 456f901338bd9eadbded3828b819109a9b68e8a525ca5cf8d0049a69fcfeca1e
+  - name: Wan2.2 TI2V-5B / split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/ee6f4a40737a995bf5818954cfce6d59443b0f04/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    target: text_encoders
+    filename: umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    sha256: c3355d30191f1f066b26d93fba017ae9809dce6c627dda5f6a66eaa651204f68
+  - name: Wan2.2 TI2V-5B / split_files/vae/wan2.2_vae.safetensors
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/ee6f4a40737a995bf5818954cfce6d59443b0f04/split_files/vae/wan2.2_vae.safetensors
+    target: vae
+    filename: wan2.2_vae.safetensors
+    sha256: e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156
+  - name: CosyVoice3 / llm.pt
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/llm.pt
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: llm.pt
+    sha256: 69f43bd545131c30e98947fb360ea8b4dc9916d8e83dded7757c7ea4f5a24970
+  - name: CosyVoice3 / flow.pt
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/flow.pt
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: flow.pt
+    sha256: a6fab32a7825e5b0bc855ddd948f8db9370b0a786fbc249caa4595e95b608e4b
+  - name: CosyVoice3 / hift.pt
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/hift.pt
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: hift.pt
+    sha256: b279d7641eb97ae55b3b540cfba4f953c26492a2df758328a89a4d007ab87a65
+  - name: CosyVoice3 / speech_tokenizer_v3.onnx
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/speech_tokenizer_v3.onnx
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: speech_tokenizer_v3.onnx
+    sha256: 23236a74175dbdda47afc66dbadd5bcb41303c467a57c261cb8539ad9db9208d
+  - name: CosyVoice3 / campplus.onnx
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/campplus.onnx
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: campplus.onnx
+    sha256: a6ac6a63997761ae2997373e2ee1c47040854b4b759ea41ec48e4e42df0f4d73
+  - name: CosyVoice3 / cosyvoice3.yaml
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/cosyvoice3.yaml
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: cosyvoice3.yaml
+  - name: CosyVoice3 / config.json
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/config.json
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: config.json
+  - name: CosyVoice3 / configuration.json
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/configuration.json
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512
+    filename: configuration.json
+  - name: CosyVoice3 / CosyVoice-BlankEN/config.json
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/CosyVoice-BlankEN/config.json
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512/CosyVoice-BlankEN
+    filename: config.json
+  - name: CosyVoice3 / CosyVoice-BlankEN/generation_config.json
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/CosyVoice-BlankEN/generation_config.json
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512/CosyVoice-BlankEN
+    filename: generation_config.json
+  - name: CosyVoice3 / CosyVoice-BlankEN/merges.txt
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/CosyVoice-BlankEN/merges.txt
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512/CosyVoice-BlankEN
+    filename: merges.txt
+  - name: CosyVoice3 / CosyVoice-BlankEN/model.safetensors
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/CosyVoice-BlankEN/model.safetensors
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512/CosyVoice-BlankEN
+    filename: model.safetensors
+    sha256: 130282af0dfa9fe5840737cc49a0d339d06075f83c5a315c3372c9a0740d0b96
+  - name: CosyVoice3 / CosyVoice-BlankEN/tokenizer_config.json
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/CosyVoice-BlankEN/tokenizer_config.json
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512/CosyVoice-BlankEN
+    filename: tokenizer_config.json
+  - name: CosyVoice3 / CosyVoice-BlankEN/vocab.json
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/FunAudioLLM/Fun-CosyVoice3-0.5B-2512/resolve/29e01c4e8d000f4bcd70751be16fa94bf3d85a18/CosyVoice-BlankEN/vocab.json
+    target: cosyvoice/Fun-CosyVoice3-0.5B-2512/CosyVoice-BlankEN
+    filename: vocab.json
+  - name: MuseTalk1.5 / musetalkV15/unet.pth
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/TMElyralab/MuseTalk/resolve/2bcb936e2fddb4d86db4c62fd45b387d0c061571/musetalkV15/unet.pth
+    target: musetalk/musetalkV15
+    filename: unet.pth
+    sha256: 7ebf6c98c181e20838e4c0054e96e944ac60d5d692cc01db42839fe11b787007
+  - name: MuseTalk1.5 / musetalkV15/musetalk.json
+    profiles: [draft12, balanced24, quality48]
+    url: https://huggingface.co/TMElyralab/MuseTalk/resolve/2bcb936e2fddb4d86db4c62fd45b387d0c061571/musetalkV15/musetalk.json
+    target: musetalk/musetalkV15
+    filename: musetalk.json

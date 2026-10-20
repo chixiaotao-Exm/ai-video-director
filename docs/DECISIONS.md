@@ -131,3 +131,13 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Force an obsolete CUDA12.8 index against current ComfyUI; rejected after official documentation verification.
 - **Decision:** ComfyUI and the app bind loopback. Compose uses host networking for a host SSH tunnel and starts separate GPU/API/CPU workers sharing one database volume. Models are an explicit manifest choice, never guessed or downloaded by tests.
 - **Alternatives:** Public ComfyUI ports or container loopback on an isolated bridge; rejected for exposure and connection correctness.
+
+## T15
+
+- **Date:** 2026-10-20
+- **Decision:** Use Wan2.2 TI2V-5B, CosyVoice3 and MuseTalk1.5 as the permissive evaluation baseline in all three memory tiers. Larger tiers initially provide headroom; optional larger models remain documented evaluations, not unmeasured compatibility promises.
+- **Alternatives:** Select the largest advertised model per tier; rejected because official memory requirements, weight licenses and wrapper compatibility differ.
+- **Decision:** Model installation is opt-in through named profiles; the default downloads nothing. Pin Hugging Face revisions and verify published LFS SHA-256 hashes. Auxiliary models and actual ComfyUI workflow exports still require operator validation.
+- **Alternatives:** Automatic multi-gigabyte downloads or floating model URLs; rejected for reproducibility and explicit deployment choice.
+- **Decision:** Keep code licenses, weight licenses, auxiliary dependency licenses, publisher minima and planning estimates separate in the research document. Record the 2026-10-20 access date and primary sources.
+- **Alternatives:** Treat an open repository as blanket commercial permission or a VRAM guarantee; rejected because neither follows from repository visibility.

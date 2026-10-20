@@ -66,21 +66,44 @@ pin their dependencies. Run setup while ComfyUI is idle; the systemd service is 
 
 ## Models and service
 
-The canonical manifest is [`models.yaml`](models.yaml) beside the installer. It starts empty
-so setup does not silently download large or gated weights. Add entries after checking the
-model's license and your workflow's required node and filename:
+The canonical manifest is [`models.yaml`](models.yaml) beside the installer. Its default
+`MODEL_PROFILE=none` downloads no models. After reviewing the model choices and dependencies
+in [`docs/MODELS.md`](../../docs/MODELS.md), explicitly select a profile:
+
+```bash
+MODEL_PROFILE=draft12 bash deploy/gpu-server/setup.sh
+# Or MODEL_PROFILE=balanced24 / MODEL_PROFILE=quality48 for 24 / 48 GB rentals.
+```
+
+All three profiles currently download the same baseline: Wan2.2 TI2V-5B and its UMT5/VAE,
+CosyVoice3 core inference files and tokenizer, and MuseTalk 1.5 main model/config. The profile
+names are planning tiers, not measured memory or throughput guarantees. Wan alone needs about
+18.15 GB decimal disk space. Allow additional space for the other models, packages, caches,
+and outputs. Downloads do not install or validate custom nodes, clear auxiliary licenses, or
+replace the placeholder API workflows. MuseTalk's required auxiliary models remain a manual
+step; the documented wrapper's 1.5 support is unverified. CosyVoice's optional RL, batch and
+optimized ONNX variants are excluded. Keep the Blackwell runtime caveats in MODELS.md in mind.
+
+To customize the manifest, assign every entry an explicit nonempty `profiles` list containing
+only `draft12`, `balanced24`, and/or `quality48`. Unknown profile names are rejected. Entries
+outside the selected profile are not downloaded. For example:
 
 ```yaml
 models:
   - name: My reviewed model
+    profiles: [balanced24, quality48]
     url: https://huggingface.co/OWNER/REPOSITORY/resolve/COMMIT/model.safetensors
     target: diffusion_models
     filename: model.safetensors
     # sha256: paste the publisher's 64-character SHA-256 here
 ```
 
-`target` is a directory relative to `COMFYUI_DIR/models`. `filename` is optional and defaults
-to the URL path's basename. Prefer immutable commit URLs and a publisher-verified `sha256`.
+`target` is a directory relative to `COMFYUI_DIR/models`. The selected custom node may require
+configuring a model path to match these directories. `filename` is optional and defaults
+to the URL path's basename. The bundled entries pin immutable repository revisions; large
+weight files also include publisher LFS SHA-256 values. Small configuration/tokenizer files
+without publisher SHA-256 values are pinned by their repository revision.
+For additions, prefer immutable commit URLs and a publisher-verified `sha256`.
 An existing nonempty model without a checksum is reused without verification. With a checksum,
 setup verifies an existing file and replaces it only after a successful matching download.
 Downloads use temporary files and atomic replacement; failed downloads preserve old models.
@@ -93,7 +116,7 @@ never forwarded to redirect hosts or written into the systemd unit:
 ```bash
 read -rsp 'Hugging Face read token: ' HF_TOKEN; printf '\n'
 export HF_TOKEN
-MODELS_MANIFEST="$PWD/deploy/gpu-server/models.yaml" bash deploy/gpu-server/setup.sh
+MODEL_PROFILE=draft12 MODELS_MANIFEST="$PWD/deploy/gpu-server/models.yaml" bash deploy/gpu-server/setup.sh
 unset HF_TOKEN
 ```
 

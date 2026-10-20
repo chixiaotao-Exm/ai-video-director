@@ -14,6 +14,7 @@ Environment:
   PYTORCH_INDEX_URL     CUDA wheel index (default: https://download.pytorch.org/whl/cu130).
   CUSTOM_NODES          Space/newline-separated HTTPS Git URLs (default: empty).
   MODELS_MANIFEST       YAML manifest (default: models.yaml beside this script).
+  MODEL_PROFILE         none (default), draft12, balanced24 or quality48; opt-in downloads.
   HF_TOKEN              Optional Hugging Face token, read only from the environment.
   SERVICE_MODE          auto, systemd or tmux (default: auto).
   DRY_RUN               1 prints a plan without installs, downloads or GPU checks.
@@ -41,7 +42,9 @@ COMFYUI_PORT="${COMFYUI_PORT:-8188}"
 PYTORCH_INDEX_URL="${PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cu130}"
 CUSTOM_NODES="${CUSTOM_NODES:-}"
 MODELS_MANIFEST="${MODELS_MANIFEST:-${SCRIPT_DIR}/models.yaml}"
+MODEL_PROFILE="${MODEL_PROFILE:-none}"
 SERVICE_MODE="${SERVICE_MODE:-auto}"
+[[ "$MODEL_PROFILE" =~ ^(none|draft12|balanced24|quality48)$ ]] || fail 'MODEL_PROFILE must be none, draft12, balanced24 or quality48.'
 [[ "$DRY_RUN" == 0 || "$DRY_RUN" == 1 ]] || fail 'DRY_RUN must be 0 or 1.'
 [[ "$SERVICE_MODE" =~ ^(auto|systemd|tmux)$ ]] || fail 'SERVICE_MODE must be auto, systemd or tmux.'
 # Simple absolute paths are also safe in systemd unit syntax and tmux commands.
@@ -56,7 +59,7 @@ if [[ "$DRY_RUN" == 1 ]]; then
     printf 'DRY_RUN: no files will be changed and no network/GPU calls will be made.\n'
     printf 'Check NVIDIA driver; install Python/venv, FFmpeg, Git and tmux if apt-get is available.\n'
     printf 'Prepare ComfyUI and its venv at %s; install CUDA PyTorch and requested custom nodes.\n' "$COMFYUI_DIR"
-    printf 'Download entries from %s; preserve existing models and verify configured hashes.\n' "$MODELS_MANIFEST"
+    printf 'Model profile %s from %s (none downloads no weights); preserve and verify existing models.\n' "$MODEL_PROFILE" "$MODELS_MANIFEST"
     printf 'Start ComfyUI with %s on 127.0.0.1:%s.\n' "$SERVICE_MODE" "$COMFYUI_PORT"
     exit 0
 fi
@@ -123,98 +126,7 @@ for repository in "${node_repositories[@]}"; do
     fi
 done
 
-"$COMFY_PYTHON" - "$MODELS_MANIFEST" "$COMFYUI_DIR/models" <<'DOWNLOAD_MODELS'
-import hashlib
-import os
-from pathlib import Path
-import re
-import sys
-import tempfile
-from urllib.parse import unquote, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
-
-import yaml
-
-
-class HTTPSRedirects(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if urlsplit(newurl).scheme != "https":
-            raise ValueError("Model downloads must not redirect to non-HTTPS URLs")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def sha256(path):
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
-
-
-def download_models():
-    manifest_path = Path(sys.argv[1])
-    document = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(document, dict) or not isinstance(document.get("models"), list):
-        raise ValueError("Manifest must contain a models list")
-    root = Path(sys.argv[2]).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    opener = build_opener(HTTPSRedirects())
-    for entry in document["models"]:
-        if not isinstance(entry, dict):
-            raise ValueError("Each model entry must be a mapping")
-        url = entry["url"]
-        parsed = urlsplit(url)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-            raise ValueError("Model URLs must use HTTPS without embedded credentials")
-        target = Path(entry["target"])
-        if target.is_absolute() or ".." in target.parts:
-            raise ValueError("Model target must be a relative directory under ComfyUI/models")
-        directory = (root / target).resolve()
-        filename = entry.get("filename") or unquote(Path(parsed.path).name)
-        if not isinstance(filename, str) or not filename or filename in {".", ".."} or any(
-            character in filename for character in "/\\\r\n"
-        ):
-            raise ValueError("Model filename must be one non-empty path component")
-        destination = directory / filename
-        if not directory.is_relative_to(root) or destination.is_symlink():
-            raise ValueError("Model destination must stay inside ComfyUI/models")
-        expected = entry.get("sha256")
-        if expected is not None and (
-            not isinstance(expected, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected)
-        ):
-            raise ValueError("sha256 must contain exactly 64 hexadecimal characters")
-        expected = expected.lower() if expected else None
-        if destination.is_file() and destination.stat().st_size > 0:
-            if expected is None or sha256(destination) == expected:
-                print(f"Keeping model: {destination} (hash {'verified' if expected else 'not supplied'})")
-                continue
-        directory.mkdir(parents=True, exist_ok=True)
-        request = Request(url, headers={"User-Agent": "avd-gpu-setup/1"})
-        if parsed.hostname == "huggingface.co" and os.environ.get("HF_TOKEN"):
-            # Unredirected headers never reach a different host (e.g. signed CDN URLs).
-            request.add_unredirected_header("Authorization", "Bearer " + os.environ["HF_TOKEN"])
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(dir=directory, prefix=".download-", delete=False) as out:
-                temporary = Path(out.name)
-                with opener.open(request, timeout=120) as response:
-                    while chunk := response.read(1024 * 1024):
-                        out.write(chunk)
-            if temporary.stat().st_size == 0:
-                raise ValueError("Model download was empty")
-            if expected and sha256(temporary) != expected:
-                raise ValueError(f"SHA-256 mismatch for {filename}; previous model was preserved")
-            os.replace(temporary, destination)
-            print(f"Downloaded model: {destination}")
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
-
-
-try:
-    download_models()
-except Exception as exc:
-    # Network exceptions may contain signed URLs; avoid printing those or any token.
-    print(f"Model download failed ({type(exc).__name__}). Check manifest, token, hash and disk space.", file=sys.stderr)
-    raise SystemExit(1) from None
-DOWNLOAD_MODELS
+"$COMFY_PYTHON" "$SCRIPT_DIR/download_models.py" "$MODELS_MANIFEST" "$COMFYUI_DIR/models" "$MODEL_PROFILE"
 
 # Smoke only the local device, after every extension has installed its requirements.
 "$COMFY_PYTHON" -c 'import torch; assert torch.cuda.is_available(), "PyTorch cannot use the GPU; check driver and PYTORCH_INDEX_URL"; print(torch.cuda.get_device_name(0)); print(torch.ones(1, device="cuda") + 1)'

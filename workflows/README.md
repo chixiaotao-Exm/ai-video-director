@@ -46,3 +46,29 @@ Choose the server using `AVD_COMFYUI_ACTIVE_PROFILE=local` or `remote`. Set prof
 `AVD_COMFYUI_PROFILES__REMOTE__BASE_URL=http://127.0.0.1:8189`. A rented server should remain
 bound to loopback behind an SSH tunnel. Profile defaults both use loopback; choosing `remote`
 does not expose or automatically provision a server.
+
+## Recommended starting models (checked October 20, 2026)
+
+Use the same baseline for the 12 GB laptop and initial 24 / 48 GB rental evaluation. Larger
+cards provide room to reduce offload; these are planning recommendations, not measured
+performance guarantees. Candidate comparisons, licenses and primary-source links are in
+[`docs/MODELS.md`](../docs/MODELS.md).
+
+| Workflow | Recommended baseline | Required integration work |
+| --- | --- | --- |
+| `image_to_video.json` | Native Wan2.2 TI2V-5B; `wan2.2_ti2v_5B_fp16.safetensors`, `umt5_xxl_fp8_e4m3fn_scaled.safetensors`, `wan2.2_vae.safetensors` | Start from the official native Comfy I2V graph, use offload on 12 GB, and connect uploaded image/prompt/seed. Convert `duration_s` into a valid frame count at the graph's output frame rate. |
+| `tts.json` | Fun-CosyVoice3-0.5B-2512; FL-CosyVoice3 node | Configure the downloaded model directory, wire the uploaded reference sample and text, and expose speed/emotion through nodes or a supported instruction mode. Verify Chinese and English output. Upstream's older pinned PyTorch stack is not a certified RTX 50 environment. |
+| `lipsync.json` | MuseTalk 1.5 evaluation baseline | The linked community wrapper documents an older checkpoint: verify or adapt 1.5 support before exporting. Install upstream VAE, Whisper, DWPose and face-parsing auxiliaries separately and review each license. The manifest's main weights alone are insufficient. |
+
+The [GPU manifest](../deploy/gpu-server/models.yaml) pins these baseline components and
+provides publisher weight checksums. GPU setup defaults to `MODEL_PROFILE=none`; opt into
+`draft12`, `balanced24`, or `quality48` to download them. `MODEL_PROFILE` controls downloads
+only; it does not select nodes, rewrite workflows, or change application model recipes.
+`CUSTOM_NODES` also defaults to empty. Review node dependencies and compatibility before
+adding their repository URLs; installing an old node can replace CUDA/PyTorch packages.
+
+After connecting all required placeholders, run each exported graph directly in ComfyUI
+with an authorized sample and confirm its saved output format. Video and lip-sync outputs
+must contain video; TTS must save audio. Retain the node/model revisions with the exported
+graph and point `AVD_WORKFLOW_DIR` at that directory. Downloading a profile does not make
+the shipped placeholder graphs executable.

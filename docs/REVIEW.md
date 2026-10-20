@@ -1,6 +1,6 @@
 # SPEC review — 2026-10-20
 
-This review covers SPEC.md sections 1–9 against T01–T11. Later explicitly requested milestones remain tracked in PROGRESS.md; this is not a claim that T12–T16 are complete.
+This review covers SPEC.md sections 1–9 and completed milestones through T15. T16 observability and robustness remains in progress; PROGRESS.md preserves the validation result for each milestone.
 
 ## Fixed findings
 
@@ -36,14 +36,22 @@ This review covers SPEC.md sections 1–9 against T01–T11. Later explicitly re
 - **§6 workflow:** separate structure review followed by script/frames/final checkpoints; human consent and bounded budget confirmation are separate from model tools. UI labels now preserve the three numbered checkpoints.
 - **§7 compliance:** unconsented face/voice assets are rejected; structure-only prompts exclude reference identity/verbatim copying; final FFmpeg graph includes a visible AI-generated label and metadata comment.
 - **§8 stack:** Python 3.12, SQLAlchemy/Pydantic 2, optional SDK/analysis/API extras, local Windows and Linux paths. No test uses live providers; outbound networking is blocked.
-- **§9 build order:** milestone commits are ordered; T12–T16 are still to be completed after this quality pass.
+- **§9 build order:** milestone commits are ordered through T15. The real offline media demo, CLI, deployment kit and model research are implemented; T16 remains in progress.
 
 ## External verification and deliberate limits
 
 1. API credentials, enabled requested model names, accurate relay prices and real provider access must be supplied for manual smoke checks. Unknown configured prices warn and record zero; estimates are not provider invoices.
 2. Real ComfyUI workflows, custom-node/model versions and GPU memory requirements need deployment exports and live validation. Placeholder templates are never represented as runnable models.
-3. FFmpeg/ffprobe are absent on the current PATH; two real-media tests skip. The offline MP4 demo is the next milestone and will have its own integration test. A Windows symlink integration case also skips where the OS cannot create symlinks.
+3. A verified local FFmpeg/ffprobe build is available under ignored data/tools/ffmpeg; check.ps1 enables it, and the real-media tests and offline MP4 demo pass. Two Windows symlink tests skip where the OS cannot create symlinks. No binaries or generated media are committed.
 4. Starlette's installed TestClient emits an upstream httpx deprecation warning; all API tests pass. This warning does not weaken network isolation or quality checks.
 5. Shot-count changes intentionally require a new project. Existing shot fields, asset replacements and version reverts are incremental. This is the documented minimal graph-edit policy for the current tasks.
 6. This is a local single-user application bound to loopback. Multi-user authentication/authorization is outside the specified milestones.
 7. A human must inspect final visual/voice quality and rights; offline fakes prove control flow, not model fidelity or legal rights.
+
+## T15 deployment research audit
+
+The model research separates code/weight/auxiliary licenses, published memory evidence and unmeasured estimates. Opt-in model profiles pin revisions and verify published weight digests. Model installation, GPU inference, custom-node compatibility and real exported workflows still require the operator's environment; the manifest alone is not a complete model deployment.
+
+## Remaining local robustness work (T16)
+
+Concurrent LLM calls can read stale project spend and exceed the project limit in aggregate. A FakeProvider reproduction requires no external service. T16 must serialize/reserve these calls before claiming the final quality audit is complete.
