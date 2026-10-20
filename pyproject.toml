@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avd"
+version = "0.1.0"
+description = "Stateful AI video director project state"
+requires-python = ">=3.12"
+dependencies = [
+  "sqlalchemy>=2",
+  "pydantic>=2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
