@@ -13,7 +13,7 @@ from pydantic import BaseModel, ValidationError
 from avd.config import LLMRoute, Settings
 from avd.state.models import Project
 
-from .budget import BudgetGuard
+from .budget import BudgetGuard, acquire_project_budget
 from .ledger import CostLedger
 from .providers import ChatResponse, FakeProvider, Provider, ProviderConfigurationError
 from .providers.anthropic import AnthropicProvider
@@ -93,6 +93,7 @@ class LLMRouter:
             raise ProviderConfigurationError("Live LLM calls require a project and CostLedger")
         assert route.model is not None
         if current_project is not None:
+            acquire_project_budget(current_project)
             if estimated_cost is None and self.ledger is not None:
                 # Conservative text planning estimate, not a token counter. Actual
                 # usage is always recorded from the provider response afterward.

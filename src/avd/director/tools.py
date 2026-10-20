@@ -15,7 +15,8 @@ from avd.assets.library import AssetLibrary
 from avd.assets.storage import AssetStorage
 from avd.engine.rebuild import JOB_TYPES
 from avd.jobs.models import Job, JobStatus
-from avd.llm.budget import BudgetExceeded, BudgetGuard
+from avd.llm.budget import BudgetExceeded, BudgetGuard, acquire_project_budget
+from avd.llm.reservations import reserved_cost
 from avd.state.consent import require_usable
 from avd.state.models import Node, NodeKind, Project
 from avd.state.repo import ProjectRepo
@@ -314,10 +315,7 @@ class DirectorTools:
                     ],
                 }
             else:
-                reserved = sum(
-                    float(job.payload.get("estimated_cost", 0))
-                    for job in self._pending(session, project)
-                )
+                reserved = reserved_cost(session, project.id)
                 result = {
                     "budget_limit": project.budget_limit,
                     "spent": project.spent,
@@ -331,6 +329,7 @@ class DirectorTools:
             return _summary(result)
 
     def _authoring(self, session: Session, project: Project, name: str, parsed: ToolInput) -> Any:
+        acquire_project_budget(project)
         pending = self._pending(session, project)
         existing = next((job for job in pending if job.job_type == name), None)
         if existing is not None:
@@ -350,7 +349,7 @@ class DirectorTools:
             payload["brief"] = parsed.brief
             role = "script"
         estimate = self.runtime.settings.job_estimated_costs.get(name, 0.0)
-        reserved = sum(float(job.payload.get("estimated_cost", 0)) for job in pending)
+        reserved = reserved_cost(session, project.id)
         confirmed = budget_is_confirmed(session, project, estimate + reserved)
         BudgetGuard(self.runtime.settings.confirm_threshold).check(
             project, estimate, confirmed=confirmed
@@ -395,10 +394,7 @@ class DirectorTools:
             estimate = sum(
                 self.runtime.engine.estimate_cost(node) for node in plan if node.kind in kinds
             )
-            reserved = sum(
-                float(job.payload.get("estimated_cost", 0))
-                for job in self._pending(session, project)
-            )
+            reserved = reserved_cost(session, project.id)
             confirmed = budget_is_confirmed(session, project, estimate + reserved)
             BudgetGuard(self.runtime.settings.confirm_threshold).check(
                 project, estimate, confirmed=confirmed

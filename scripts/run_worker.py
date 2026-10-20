@@ -4,7 +4,7 @@ import argparse
 import signal
 from threading import Event
 
-from avd.jobs import Worker
+from avd.observability import configure_logging
 from avd.runtime import Runtime
 
 
@@ -17,20 +17,16 @@ def main() -> None:
     )
     args = parser.parse_args()
     runtime = Runtime()
+    configure_logging(runtime.settings.log_format, runtime.settings.log_level)
     stop = Event()
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     try:
         if args.recover_stale:
             runtime.queue.recover_stale(force=True)
-        worker = Worker(
-            runtime.queue,
-            args.lane,
-            runtime.build_registry(),
-            on_finished=runtime.on_finished,
-        )
+        worker = runtime.build_worker(args.lane)
         if args.once:
-            worker.run_once()
+            worker.run_once(stop)
         else:
             worker.run_forever(stop, poll_interval=0.25)
     finally:

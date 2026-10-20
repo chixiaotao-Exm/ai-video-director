@@ -16,7 +16,7 @@ from avd import cli
 from avd.config import Settings
 from avd.director.agent import DirectorAgent
 from avd.director.review import approve
-from avd.jobs import JobStatus
+from avd.jobs import JobStatus, Worker
 from avd.llm import FakeProvider
 from avd.runtime import Runtime
 from avd.state.models import Character, Node, NodeKind, NodeStatus, Project, Version
@@ -366,7 +366,11 @@ def test_worker_once_uses_runtime_registry_and_completion_callback(
         handlers.register("offline_test", lambda job: {"done": True})
         return handlers
 
-    monkeypatch.setattr(Runtime, "build_registry", registry)
+    monkeypatch.setattr(
+        Runtime,
+        "build_worker",
+        lambda runtime, lane: Worker(runtime.queue, lane, registry(runtime), runtime.on_finished),
+    )
     monkeypatch.setattr(Runtime, "on_finished", lambda runtime, job: calls.append(job.id))
     job_id = cli_runtime.queue.submit("api", "offline_test", {})
     assert success(capsys, "worker", "--lane", "cpu", "--once")["worked"] is False

@@ -141,3 +141,15 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Automatic multi-gigabyte downloads or floating model URLs; rejected for reproducibility and explicit deployment choice.
 - **Decision:** Keep code licenses, weight licenses, auxiliary dependency licenses, publisher minima and planning estimates separate in the research document. Record the 2026-10-20 access date and primary sources.
 - **Alternatives:** Treat an open repository as blanket commercial permission or a VRAM guarantee; rejected because neither follows from repository visibility.
+
+## T16
+
+- **Date:** 2026-10-20
+- **Decision:** Configure plain/JSON stderr logging at application entry points; attach request/worker context without logging HTTP bodies. Health checks only touch the local database, and JSON metrics are read-only persisted queue/spend summaries.
+- **Alternatives:** Probe paid providers from health checks or log full request payloads; rejected because liveness checks must be cheap and should not expose user content.
+- **Decision:** Production workers spawn an execution process from serializable Settings and rebuild Runtime there. The supervisor retains its heartbeat/claim until the entire local process tree stops, then completes/fails the attempt. Windows Job Objects and POSIX process groups own descendants; graceful shutdown drains within a configurable grace period.
+- **Alternatives:** Time out a thread and release its lane; rejected because the original handler could keep executing alongside its retry. Fake/demo workers remain inline unless an isolated runner is supplied.
+- **Decision:** Unconfirmed process cleanup quarantines a running claim with a non-expiring lease and stops that supervisor. Recovery is an explicit operator action after stopping old processes; ordinary polling never releases quarantined GPU work.
+- **Alternatives:** Automatically expire an uncertain live process; rejected because that can violate GPU serialization. Accepted remote requests may still run or bill after local cancellation, so exactly-once remote execution is not claimed.
+- **Decision:** All budget decisions and accounting share a nonblocking per-database/project OS lock until the outer transaction commits or rolls back. Concurrent conflicts fail visibly instead of waiting while holding SQLite write locks. Pending unledgered executor attempts stay reserved through completion/retry gaps.
+- **Alternatives:** Refresh spend without mutual exclusion, or hold SQLite write locks across network calls; rejected because the first races and the second blocks queue heartbeats. A separate distributed reservation service is beyond the single-host SQLite deployment.

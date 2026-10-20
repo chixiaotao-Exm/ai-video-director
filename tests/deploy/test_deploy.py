@@ -124,7 +124,7 @@ def test_container_services_share_storage_and_cover_each_worker_lane() -> None:
     assert "FROM python:3.12-slim" in dockerfile
     assert "USER avd" in dockerfile
     assert "COPY . " not in dockerfile and "COPY .env" not in dockerfile
-    assert "http://127.0.0.1:8000/" in dockerfile
+    assert "http://127.0.0.1:8000/health" in dockerfile
     assert '"--host", "127.0.0.1"' in dockerfile
     assert "network_mode: host" in compose
     assert "condition: service_healthy" in compose

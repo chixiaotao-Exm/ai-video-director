@@ -115,3 +115,12 @@
 - Added validated, atomic HTTPS downloads and offline profile/hash/token/redirect/failure tests. No model weights were downloaded.
 - Verification: 445 passed, 2 skipped (Windows symlink permissions), 1 upstream TestClient warning; Ruff lint/format, mypy and Bash syntax green.
 - Remaining external gaps: real GPU/custom-node validation, complete auxiliary models and licenses, and exported ComfyUI workflows. T16 addresses observability and the concurrently discovered LLM budget race.
+
+## T16 — observability, deadlines and budget concurrency
+
+- Added text/JSON stderr logs with project/job context, read-only queue/spend metrics and database health; Docker now probes /health.
+- Production workers use spawned execution processes with configurable per-type hard deadlines and bounded graceful shutdown. Heartbeats continue through cleanup; Windows Job Objects and POSIX process groups prevent local descendants from surviving a controlled timeout. A POSIX parent watcher adds orphan protection. Unconfirmed cleanup quarantines the lane until verified exclusive recovery.
+- Closed concurrent budget races with per-project OS locks through the owning transaction, refreshed spend, common scheduling/accounting locks, and reservations for completed/retried attempts awaiting their ledger entry.
+- Verification: 519 passed, 2 skipped (Windows symlink permissions), 1 upstream Starlette TestClient deprecation warning; Ruff lint/format, mypy, Bash syntax and diff whitespace checks green. Tests include real Windows execution children/grandchildren and offline cross-process budget locks. Real FFmpeg demo/incremental tests pass.
+- External limits: real providers/prices, GPU/custom-node inference, exported workflows and Docker deployment require operator validation. Linux process-group/watcher logic was unit checked and type checked here; actual Linux process integration still needs the target host. Accepted remote work can continue after local timeouts; provider usage unavailable before termination requires invoice reconciliation.
+- Final requirement checklist and operational limits are recorded in REVIEW.md; all Settings variables and installer/check-script variables are documented in .env.example. User-supplied tasks/GOAL-T04-T16.md and tasks/T03-job-queue.md remain untracked and unchanged.

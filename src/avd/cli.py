@@ -23,7 +23,8 @@ from avd.config import Settings
 from avd.director.agent import DirectorAgent
 from avd.director.review import review_status
 from avd.director.tools import CharacterInput, DirectorTools, VoiceInput, project_node
-from avd.jobs import JobStatus, Worker
+from avd.jobs import JobStatus
+from avd.observability import configure_logging
 from avd.runtime import Runtime
 from avd.state.models import Character, NodeKind, Project, Voice
 from avd.state.paths import relative_path
@@ -299,16 +300,14 @@ def _project_command(runtime: Runtime, args: argparse.Namespace) -> Any:
 
 def _worker(runtime: Runtime, args: argparse.Namespace) -> dict[str, Any]:
     recovered = runtime.queue.recover_stale(force=True) if args.recover_stale else 0
-    worker = Worker(
-        runtime.queue, args.lane, runtime.build_registry(), on_finished=runtime.on_finished
-    )
-    if args.once:
-        return {"lane": args.lane, "worked": worker.run_once(), "recovered": recovered}
+    worker = runtime.build_worker(args.lane)
     stop = Event()
     previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
     try:
         for signum in previous:
             signal.signal(signum, lambda *_: stop.set())
+        if args.once:
+            return {"lane": args.lane, "worked": worker.run_once(stop), "recovered": recovered}
         worker.run_forever(stop)
     finally:
         for signum, handler in previous.items():
@@ -411,7 +410,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             overrides["data_dir"] = args.data_dir.expanduser().resolve()
         if args.database_url is not None:
             overrides["database_url"] = args.database_url
-        runtime = Runtime(Settings(**overrides))
+        settings = Settings(**overrides)
+        configure_logging(settings.log_format, settings.log_level)
+        runtime = Runtime(settings)
         result = _run(runtime, args)
         if result is not None:
             print(json.dumps(result, ensure_ascii=False, default=_json_default))

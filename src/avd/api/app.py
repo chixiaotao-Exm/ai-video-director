@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,7 +21,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -27,8 +29,9 @@ from avd.assets.library import AssetLibrary
 from avd.assets.storage import AssetStorage
 from avd.config import Settings
 from avd.director.review import ReviewRequired, approve, approve_budget, review_status
-from avd.jobs.models import Job, JobStatus
+from avd.jobs.models import Job, JobLane, JobStatus
 from avd.llm.budget import BudgetExceeded, ConfirmationRequired
+from avd.observability import configure_logging, log_context
 from avd.state.models import Character, Node, NodeKind, Project, Version, Voice
 from avd.state.repo import ProjectRepo
 
@@ -41,6 +44,7 @@ ASSET_EXTENSIONS = AssetStorage.IMAGE_EXTENSIONS | AssetStorage.AUDIO_EXTENSIONS
 MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | ASSET_EXTENSIONS | {".ogg", ".aac", ".srt", ".vtt"}
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 TERMINAL_STATUSES = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}
+_LOGGER = logging.getLogger(__name__)
 
 
 class InputModel(BaseModel):
@@ -304,6 +308,8 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
             application.state.runtime = owned_runtime
             if application.state.max_upload_bytes is None:
                 application.state.max_upload_bytes = owned_runtime.settings.max_upload_bytes
+        active_settings = application.state.runtime.settings
+        configure_logging(active_settings.log_format, active_settings.log_level)
         try:
             yield
         finally:
@@ -317,6 +323,33 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
     static_dir = Path(__file__).with_name("static")
     application.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+    @application.middleware("http")
+    async def request_logging(request: Request, call_next: Any) -> Any:
+        parts = request.url.path.split("/")
+        project_id = None
+        if len(parts) > 2 and parts[1] == "projects":
+            try:
+                project_id = str(uuid.UUID(parts[2]))
+            except ValueError:
+                pass
+        started = time.monotonic()
+        status = 500
+        with log_context(project_id=project_id):
+            try:
+                response = await call_next(request)
+                status = response.status_code
+                return response
+            finally:
+                _LOGGER.info(
+                    "HTTP request handled",
+                    extra={
+                        "event": "http_request",
+                        "method": request.method,
+                        "status": status,
+                        "duration_ms": round((time.monotonic() - started) * 1000, 2),
+                    },
+                )
+
     @application.get("/", include_in_schema=False)
     def workspace() -> FileResponse:
         return FileResponse(static_dir / "index.html", media_type="text/html")
@@ -326,6 +359,50 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
         if value is None:
             raise HTTPException(503, "Application runtime has not started")
         return cast("Runtime", value)
+
+    @application.get("/health")
+    def health() -> JSONResponse:
+        try:
+            with current_runtime().session_factory() as session:
+                session.execute(select(1))
+        except Exception:
+            _LOGGER.warning("Database health check failed", extra={"event": "health_failed"})
+            return JSONResponse(
+                status_code=503, content={"status": "unavailable", "database": "unavailable"}
+            )
+        return JSONResponse(content={"status": "ok", "database": "ok"})
+
+    @application.get("/metrics")
+    def metrics() -> dict[str, Any]:
+        try:
+            with current_runtime().session_factory() as session:
+                depth = {lane.value: 0 for lane in JobLane}
+                for lane, count in session.execute(
+                    select(Job.lane, func.count())
+                    .where(Job.status == JobStatus.QUEUED)
+                    .group_by(Job.lane)
+                ):
+                    depth[lane.value] = count
+                running = [
+                    _columns(
+                        job,
+                        ("id", "project_id", "lane", "job_type", "attempts", "started_at"),
+                    )
+                    for job in session.scalars(
+                        select(Job)
+                        .where(Job.status == JobStatus.RUNNING)
+                        .order_by(Job.started_at, Job.id)
+                    )
+                ]
+                spend = dict(session.execute(select(Project.id, Project.spent)).all())
+                return {
+                    "queue_depth": depth,
+                    "running_jobs": running,
+                    "spent_by_project": spend,
+                }
+        except Exception as exc:
+            _LOGGER.warning("Metrics query failed", extra={"event": "metrics_failed"})
+            raise HTTPException(503, "Metrics are unavailable") from exc
 
     def media_root() -> Path:
         return current_runtime().settings.data_dir.expanduser().resolve()

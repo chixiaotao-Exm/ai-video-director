@@ -3,19 +3,50 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from avd.config import Settings
 from avd.engine import RebuildEngine
 from avd.engine.rebuild import JOB_TYPES, _hash
-from avd.jobs import HandlerRegistry, Job, JobQueue, JobStatus
+from avd.jobs import HandlerRegistry, Job, JobQueue, JobStatus, Worker
+from avd.jobs.models import JobLane
+from avd.jobs.process import ProcessRunner
 from avd.llm import BudgetExceeded, CostLedger, LLMRouter
+from avd.llm.budget import acquire_project_budget
 from avd.llm.providers import Provider
+from avd.llm.reservations import reserved_cost
+from avd.observability import configure_logging, log_context
 from avd.state.db import create_engine, create_session_factory, init_db
 from avd.state.models import Node, NodeKind, Project
+
+
+@dataclass(frozen=True)
+class RuntimeJobHandler:
+    """Serializable production handler; database connections stay in their process."""
+
+    settings: Settings
+
+    def __call__(self, claimed: Job) -> dict[str, Any]:
+        configure_logging(self.settings.log_format, self.settings.log_level)
+        with log_context(project_id=claimed.project_id, job_id=claimed.id):
+            runtime = Runtime(self.settings)
+            try:
+                job = runtime.queue.get(claimed.id)
+                if (
+                    job is None
+                    or job.status != JobStatus.RUNNING
+                    or job.claim_token != claimed.claim_token
+                ):
+                    raise ValueError("Job attempt no longer belongs to this worker")
+                handler = runtime.build_registry().get(job.job_type)
+                if handler is None:
+                    raise ValueError(f"Unknown job_type: {job.job_type}")
+                return handler(job)
+            finally:
+                runtime.close()
 
 
 class Runtime:
@@ -81,16 +112,7 @@ class Runtime:
 
     @staticmethod
     def _reserved(session: Session, project_id: str, *, exclude: str | None = None) -> float:
-        return sum(
-            float(job.payload.get("estimated_cost", 0))
-            for job in session.scalars(
-                select(Job).where(
-                    Job.project_id == project_id,
-                    Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
-                )
-            )
-            if job.id != exclude
-        )
+        return reserved_cost(session, project_id, exclude=exclude)
 
     def build_registry(self) -> HandlerRegistry:
         from avd.agents.analysis import AnalysisPipeline, StructureTemplate
@@ -180,6 +202,30 @@ class Runtime:
         registry.register("character_sheet", make_sheet_handler(self, guard(sheet_image_handler)))
         return registry
 
+    def build_worker(self, lane: JobLane | str) -> Worker:
+        """Build the production supervisor with per-job process isolation."""
+        if self.providers or self.database is None:
+            raise ValueError(
+                "Isolated workers require a persistent Runtime without injected providers; "
+                "construct an inline Worker explicitly for fake backends"
+            )
+        registry = HandlerRegistry()
+        handler = RuntimeJobHandler(self.settings)
+        job_types = {value[1] for value in JOB_TYPES.values()}
+        job_types.update({"analyze_video", "write_script", "character_sheet"})
+        for job_type in job_types:
+            registry.register(job_type, handler)
+        return Worker(
+            self.queue,
+            lane,
+            registry,
+            self.on_finished,
+            runner=ProcessRunner(),
+            timeout_seconds=self.settings.job_timeout_seconds,
+            job_timeouts=self.settings.job_timeouts,
+            shutdown_grace_seconds=self.settings.worker_shutdown_grace_seconds,
+        )
+
     def check_job(self, job: Job) -> None:
         """Recheck reviews, consent and budget immediately before executor work."""
         from avd.director.review import budget_is_confirmed, require_review
@@ -195,6 +241,7 @@ class Runtime:
             project = node.project if node else session.get(Project, job.project_id)
             if project is None or (node is None and job.job_type != "character_sheet"):
                 raise LookupError("Generation job has no project node")
+            acquire_project_budget(project)
             snapshot = job.payload.get("recipe", {}).get("_execution")
             if (
                 node is not None
@@ -233,7 +280,10 @@ class Runtime:
             project = session.get(Project, job.project_id)
             if saved is None or project is None:
                 return
-            for attempt in saved.payload.get("_started_paid_attempts", []):
+            attempts = set(saved.payload.get("_started_paid_attempts", []))
+            if saved.status == JobStatus.SUCCEEDED:
+                attempts.add(saved.attempts)
+            for attempt in attempts:
                 if attempt <= saved.attempts:
                     cost = float(saved.payload.get("estimated_cost", 0))
                     if attempt == saved.attempts and saved.status == JobStatus.SUCCEEDED:
@@ -254,4 +304,4 @@ class Runtime:
             self.database.dispose()
 
 
-__all__ = ["Runtime"]
+__all__ = ["Runtime", "RuntimeJobHandler"]

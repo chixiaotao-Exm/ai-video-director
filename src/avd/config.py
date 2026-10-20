@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     job_estimated_costs: dict[str, float] = Field(default_factory=dict)
     llm_max_output_tokens: int = Field(default=4096, gt=0)
     max_upload_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
+    log_format: Literal["text", "json"] = "text"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    job_timeout_seconds: float = Field(default=3600.0, gt=0, allow_inf_nan=False)
+    job_timeouts: dict[str, Annotated[float, Field(gt=0, allow_inf_nan=False)]] = Field(
+        default_factory=dict
+    )
+    worker_shutdown_grace_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     comfyui_url: str | None = None
     smoke_workflow: Path | None = None
     smoke_image_prompt: str | None = None

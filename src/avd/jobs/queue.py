@@ -250,6 +250,19 @@ class JobQueue:
                 job.finished_at = _utc_now()
             return self._commit_and_detach(session, job)
 
+    def quarantine(self, job_id: str, error: str, *, claim_token: str) -> Job:
+        """Hold an unsafe process attempt until exclusive manual recovery.
+
+        A finite expired lease would allow another GPU claimant while a process
+        with unconfirmed termination might still be alive.
+        """
+        with self.session_factory() as session:
+            self._begin_write_transaction(session)
+            job = self._get_running(session, job_id, claim_token)
+            job.error = f"Process cleanup failed; manual recovery required: {error}"
+            job.lease_expires_at = datetime.max.replace(tzinfo=timezone.utc)
+            return self._commit_and_detach(session, job)
+
     def recover_stale(self, *, force: bool = False) -> int:
         """Recover expired leases; force only after all prior workers have stopped.
 

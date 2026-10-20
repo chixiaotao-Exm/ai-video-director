@@ -79,8 +79,8 @@ class CostLedger:
             output_tokens=output_tokens,
             est_cost=cost,
         )
-        self.session.add(entry)
         BudgetGuard().record_spend(project, cost)
+        self.session.add(entry)
         self.session.flush()
         return entry
 

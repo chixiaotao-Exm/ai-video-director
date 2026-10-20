@@ -155,3 +155,17 @@ docker compose -f deploy/docker-compose.yml up --build -d
 ```
 
 Compose 使用 host networking，面向 Linux 或启用了 host networking 的 Docker Desktop，以便访问主机上的 SSH 隧道。数据库与媒体在独立 named volume 中；不要用删除 volume 的方式停止服务。
+
+## 运行状态、超时与退出
+
+`GET /health` 检查应用数据库连接，正常返回 200，数据库不可用返回 503。它不探测收费模型或 GPU。`GET /metrics` 返回各 lane 的排队数量、正在运行的任务和各项目累计费用；Docker 健康检查使用 `/health`。
+
+日志输出到 stderr，包含 `project_id`、`job_id` 和事件类型；设置 `AVD_LOG_FORMAT=json` 可供日志工具读取，`AVD_LOG_LEVEL` 控制级别。HTTP 日志记录方法、状态和耗时，不记录聊天正文或上传内容。
+
+生产 CLI 和 `scripts/run_worker.py` 为每次任务启动独立执行进程。`AVD_JOB_TIMEOUT_SECONDS=3600` 是默认硬超时；`AVD_JOB_TIMEOUTS` 的 JSON 字典按 job_type 覆盖，例如 `{"tts":600,"lipsync":1800}`。超时先终止本地执行进程及其子进程，再记录失败并按 `max_attempts` 重试。内嵌 fake/demo Worker 保持同步执行；若配置硬超时，必须提供隔离执行器。
+
+Ctrl+C / SIGTERM 停止领取新任务，给当前任务 `AVD_WORKER_SHUTDOWN_GRACE_SECONDS` 秒完成，默认 30 秒；超过宽限期后终止并按重试策略保存。Windows 使用 Job Object 管理进程树；Linux 使用独立进程组并监测监督进程退出。若不能确认进程树已停止，该任务保持 running 并记录隔离原因，GPU lane 不会继续领取。确认所有旧 worker、其子进程和相关远程工作已停止后，才使用 `--recover-stale` 强制恢复。
+
+本地超时不会保证取消远程服务已经接受的推理；远程任务可能继续执行和计费。队列任务提供可重试的至少一次执行，不承诺外部调用恰好一次；强制中断时尚未返回的用量应与服务商账单核对。
+
+同项目的预算决策、调用与记账互斥到事务提交。并发冲突返回 HTTP 409 / `BudgetBusy`，稍后重试即可；worker 冲突也遵循有限重试次数。数据库旁的 `.avd-budget-locks` 文件保存锁载体，锁由操作系统管理；运行期间不要删除它们。完成但尚未记账的生成尝试继续占用预算，避免回调间隙重复花费。

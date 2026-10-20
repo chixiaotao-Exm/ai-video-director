@@ -18,6 +18,7 @@ from avd.backends.workflows import DEFAULT_WORKFLOWS_DIR, WorkflowTemplateError
 from avd.config import Settings
 from avd.jobs import Job, JobQueue, JobStatus
 from avd.llm import BudgetExceeded, BudgetGuard, CostLedger
+from avd.llm.reservations import reserved_cost
 from avd.state.consent import require_usable
 from avd.state.models import Node, NodeKind, NodeStatus, Project, Version
 from avd.state.repo import ProjectRepo
@@ -194,7 +195,7 @@ class RebuildEngine:
                 )
             )
             active_nodes = {job.node_id for job in active}
-            reserved = sum(float(job.payload.get("estimated_cost", 0)) for job in active)
+            reserved = reserved_cost(session, project_id)
             job_ids: list[str] = []
             for node in plan:
                 if (

@@ -1,6 +1,6 @@
 # SPEC review — 2026-10-20
 
-This review covers SPEC.md sections 1–9 and completed milestones through T15. T16 observability and robustness remains in progress; PROGRESS.md preserves the validation result for each milestone.
+This review covers SPEC.md sections 1–9 and the T03b–T16 milestone requirements. PROGRESS.md preserves the validation result for each milestone; the final local quality gate covers the complete implementation.
 
 ## Fixed findings
 
@@ -36,7 +36,7 @@ This review covers SPEC.md sections 1–9 and completed milestones through T15. 
 - **§6 workflow:** separate structure review followed by script/frames/final checkpoints; human consent and bounded budget confirmation are separate from model tools. UI labels now preserve the three numbered checkpoints.
 - **§7 compliance:** unconsented face/voice assets are rejected; structure-only prompts exclude reference identity/verbatim copying; final FFmpeg graph includes a visible AI-generated label and metadata comment.
 - **§8 stack:** Python 3.12, SQLAlchemy/Pydantic 2, optional SDK/analysis/API extras, local Windows and Linux paths. No test uses live providers; outbound networking is blocked.
-- **§9 build order:** milestone commits are ordered through T15. The real offline media demo, CLI, deployment kit and model research are implemented; T16 remains in progress.
+- **§9 build order:** milestone commits are ordered through T16. The offline real-media demo, CLI, deployment kit, model research, observability and worker robustness are implemented.
 
 ## External verification and deliberate limits
 
@@ -52,6 +52,31 @@ This review covers SPEC.md sections 1–9 and completed milestones through T15. 
 
 The model research separates code/weight/auxiliary licenses, published memory evidence and unmeasured estimates. Opt-in model profiles pin revisions and verify published weight digests. Model installation, GPU inference, custom-node compatibility and real exported workflows still require the operator's environment; the manifest alone is not a complete model deployment.
 
-## Remaining local robustness work (T16)
+## T16 follow-up audit
 
-Concurrent LLM calls can read stale project spend and exceed the project limit in aggregate. A FakeProvider reproduction requires no external service. T16 must serialize/reserve these calls before claiming the final quality audit is complete.
+- Concurrent LLM calls previously checked stale spend. BudgetGuard/router now acquire a nonblocking per-database/project OS lock until the outer transaction commits/rolls back. Scheduling and accounting use the same lock; queued work and unledgered executor attempts remain reserved. FakeProvider, cross-process, rollback, nested-transaction, completed-sheet and callback-replay tests cover the reproduced races. Conflicts are visible as BudgetBusy/HTTP 409 and use ordinary finite worker retries.
+- Application entry points configure text/JSON logging; HTTP and worker events carry project/job context. Health returns 503 on a database failure, metrics report persisted queues/running jobs/spend, and Docker probes /health.
+- Production workers reconstruct Runtime in spawned processes, enforce default/per-type timeouts, drain on SIGINT/SIGTERM up to the configured grace, stop the local process tree before releasing the claim, and retain a non-expiring quarantine lease if cleanup cannot be confirmed. Tests use actual Windows child/grandchild processes, verify heartbeat/serialization and exhausted retries, and test POSIX group/watcher logic without network calls.
+- Windows Job Objects also stop descendants on supervisor death. POSIX children monitor the original parent PID and terminate their own process group if orphaned. Actual Linux process integration still needs the target host; a native extension continuously holding the GIL can delay the in-process watcher. SIGKILL/system failure is not presented as graceful shutdown.
+- External calls remain at-least-once: remote ComfyUI/provider work already accepted can continue or bill after local timeout. A timeout before provider usage is returned/committed requires invoice reconciliation. An authoring process killed after its version commit but before queue completion can create another immutable version on retry. Exactly-once external execution/transactions were not promised by these milestones.
+
+## Milestone requirement checklist
+
+| Milestone | Audited evidence |
+| --- | --- |
+| T03b | Attempt exhaustion on stale recovery; callback exceptions logged without stopping the worker loop. |
+| T04 | Upload/submit/history/download, typed placeholder validation, local/remote profiles, offline MockTransport errors/timeouts; real workflow exports remain explicit deployment inputs. |
+| T05 | Provider interfaces/fakes, role defaults and overrides, structured repair, usage ledger, budget/confirmation checks; live SDK imports are lazy. |
+| T06 | Probe/scenes/audio/ASR/structure-only understanding, immutable analysis publication, optional heavy dependencies and actual FFmpeg clip test. |
+| T07 | Structured storyboards, shared graph application, field-to-node incremental updates and unaffected-shot tests. |
+| T08 | Image/Comfy/media handlers, relative immutable attempt outputs, subtitles/AI label, incremental rebuild/cache/revert/failure/consent/budget tests. |
+| T09 | All 17 tools, persisted tool-loop chat, separate human approvals, nonblocking jobs, safe uploads/media, status/versions/revert/SSE tests. |
+| T10 | Served static workspace, asset consent, shot previews/reverts, numbered checkpoints, SSE/status/budget display and documented setup/workflow. |
+| T11 | Ruff/format/mypy configuration and check scripts; state/queue/engine strict typing; identified local integrity and budget races fixed with regressions. |
+| T12 | Real offline three-shot MP4 via production queue/engine; visible subtitles/disclosure; shot-two-only chain regeneration and cache reuse. |
+| T13 | Installed argparse CLI for project/assets/consent/analysis/chat/rebuild/versions/revert/jobs/worker/serve; non-LLM tests. |
+| T14 | Ubuntu GPU checks/venv/custom nodes/model downloader, Blackwell-capable torch selection, loopback service/tunnel guide, app Docker/Compose; Bash syntax/dry-run tests. |
+| T15 | Current candidate tables, source/access dates, license/memory/node/Blackwell distinctions, three opt-in baseline tiers, pinned manifest/hash verification and workflow guide. |
+| T16 | Contextual structured logs, database health/JSON metrics, spawned deadlines, bounded shutdown, retry exhaustion, process-tree cleanup/quarantine and concurrency regression tests. |
+
+All implementation checks are offline. Real API access, rented GPU installation, Docker image execution, actual exported ComfyUI graphs and model fidelity remain external validation, not passing offline-test claims.
