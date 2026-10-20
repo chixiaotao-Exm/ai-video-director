@@ -45,3 +45,11 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Hard-coded unverified prices; rejected because relay prices and model access vary.
 - **Decision:** The router estimates text input size plus configured maximum output tokens before a call, then records provider-reported usage afterward. Estimates are advisory; callers may supply an explicit estimate for multimodal calls.
 - **Alternatives:** Claim exact prices/token counts before execution; rejected because provider usage is only known afterward.
+
+## T06
+
+- **Date:** 2026-10-20
+- **Decision:** Analysis input must resolve within data_dir; the API/CLI will import external sources there. Each analysis run uses a new output directory so old version files remain untouched.
+- **Alternatives:** Persist arbitrary absolute source paths; rejected because project storage must be portable.
+- **Decision:** Silent video has an empty transcript. Real shot detection and Whisper remain optional, lazy imports; Whisper uses CPU/int8 by default to avoid competing with the serial GPU lane.
+- **Alternatives:** Reject silent videos or automatically occupy the GPU; rejected as unnecessary restrictions.

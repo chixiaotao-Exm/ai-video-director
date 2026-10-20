@@ -23,8 +23,12 @@ llm = [
   "openai>=1.50",
   "google-genai>=1",
 ]
+analysis = [
+  "faster-whisper>=1",
+  "scenedetect[opencv]>=0.6",
+]
 all = [
-  "avd[llm]",
+  "avd[llm,analysis]",
 ]
 
 [tool.setuptools]

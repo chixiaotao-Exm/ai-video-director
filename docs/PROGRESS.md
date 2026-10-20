@@ -43,3 +43,10 @@
 - Added SDK-double contracts and Gemini inline/file-upload tests without network; manual LLM smoke skips without keys.
 - Tests: 73 passed.
 - External requirements: enabled model names, provider/relay keys and accurate price table. Gemini has no guessed default. Real SDK calls were not exercised.
+
+## T06 — analysis pipeline
+
+- Added ffprobe/FFmpeg steps, optional scene detection and CPU Whisper transcription, validated structure/style-only schemas, and Gemini video understanding.
+- Added reusable analysis orchestration with injected fakes, separate output directories, immutable versions, cost recording, and failure-safe publication.
+- Tests: 102 passed, 1 skipped (FFmpeg/ffprobe not available on PATH). Manual analysis smoke exits normally without --video.
+- External requirements: FFmpeg, optional analysis dependencies/model downloads, Gemini configuration. No real service called.

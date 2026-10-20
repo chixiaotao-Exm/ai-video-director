@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     llm_routes: dict[str, LLMRoute] = Field(default_factory=dict)
     model_prices: dict[str, ModelPrice] = Field(default_factory=dict)
     confirm_threshold: float = Field(default=1.0, ge=0, allow_inf_nan=False)
+    whisper_model: str = "small"
     llm_max_output_tokens: int = Field(default=4096, gt=0)
 
     model_config = SettingsConfigDict(
