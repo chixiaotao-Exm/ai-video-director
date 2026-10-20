@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, MutableMapping
+import logging
 import threading
 import time
 import traceback
@@ -14,6 +15,7 @@ from .queue import JobQueue
 
 JobHandler = Callable[[Job], dict[str, Any]]
 _GPU_RUN_LOCK = threading.Lock()
+_LOGGER = logging.getLogger(__name__)
 
 
 class HandlerRegistry:
@@ -95,7 +97,10 @@ class Worker:
 
     def _notify(self, job: Job) -> None:
         if self.on_finished is not None:
-            self.on_finished(job)
+            try:
+                self.on_finished(job)
+            except Exception:
+                _LOGGER.exception("on_finished callback failed for job %s", job.id)
 
 
 __all__ = ["HandlerRegistry", "JobHandler", "Worker"]

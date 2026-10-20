@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 import time
 
 import pytest
@@ -93,6 +93,21 @@ def test_recover_stale_jobs(queue):
     assert recovered.started_at is None
 
 
+def test_recover_stale_exhausted_job_fails_as_worker_crash(queue):
+    job_id = queue.submit("gpu", "lipsync", {}, max_attempts=1)
+    claimed = queue.claim_next("gpu")
+    assert claimed is not None
+    assert claimed.attempts == claimed.max_attempts
+
+    assert queue.recover_stale() == 1
+
+    recovered = queue.get(job_id)
+    assert recovered.status == JobStatus.FAILED
+    assert recovered.error == "worker crashed"
+    assert recovered.started_at is None
+    assert recovered.finished_at is not None
+
+
 def test_worker_unknown_job_type_fails_without_retry(queue):
     registry = HandlerRegistry()
     worker = Worker(queue, "api", registry)
@@ -115,6 +130,35 @@ def test_worker_handler_exception_retries_and_reports_traceback(queue):
     job = queue.get(job_id)
     assert job.status == JobStatus.FAILED
     assert "ZeroDivisionError" in job.error
+
+
+def test_worker_on_finished_exception_is_logged_and_run_forever_continues(
+    queue, caplog
+):
+    registry = HandlerRegistry()
+    processed: list[str] = []
+    registry.register("work", lambda job: processed.append(job.id) or {"ok": True})
+    stop_event = Event()
+    notifications: list[str] = []
+
+    def on_finished(job):
+        notifications.append(job.id)
+        if len(notifications) == 1:
+            raise RuntimeError("notification failed")
+        stop_event.set()
+
+    worker = Worker(queue, "cpu", registry, on_finished=on_finished)
+    first_id = queue.submit("cpu", "work", {})
+    second_id = queue.submit("cpu", "work", {})
+
+    with caplog.at_level("ERROR", logger="avd.jobs.worker"):
+        worker.run_forever(stop_event, poll_interval=0.001)
+
+    assert processed == [first_id, second_id]
+    assert notifications == [first_id, second_id]
+    assert queue.get(first_id).status == JobStatus.SUCCEEDED
+    assert queue.get(second_id).status == JobStatus.SUCCEEDED
+    assert "on_finished callback failed" in caplog.text
 
 
 def test_two_api_workers_do_not_claim_same_job(tmp_path):

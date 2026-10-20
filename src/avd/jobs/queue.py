@@ -165,13 +165,23 @@ class JobQueue:
 
     def recover_stale(self) -> int:
         with self.session_factory() as session:
-            result = session.execute(
-                update(Job)
-                .where(Job.status == JobStatus.RUNNING)
-                .values(status=JobStatus.QUEUED, started_at=None, finished_at=None)
+            stale_jobs = list(
+                session.scalars(
+                    select(Job).where(Job.status == JobStatus.RUNNING)
+                ).all()
             )
+            recovered_at = _utc_now()
+            for job in stale_jobs:
+                job.started_at = None
+                if job.attempts >= job.max_attempts:
+                    job.status = JobStatus.FAILED
+                    job.error = "worker crashed"
+                    job.finished_at = recovered_at
+                else:
+                    job.status = JobStatus.QUEUED
+                    job.finished_at = None
             session.commit()
-            return result.rowcount
+            return len(stale_jobs)
 
     @staticmethod
     def _claim_sort_key(
