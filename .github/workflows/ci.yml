@@ -21,7 +21,6 @@ jobs:
     env:
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
-      AVD_DATA_DIR: data/ci
     steps:
       - uses: actions/checkout@v7
         with:
