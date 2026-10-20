@@ -88,6 +88,29 @@ export function liveMindMap(ctx, projectId, {compact = false} = {}) {
   const stamp = h('small', {class: 'muted'});
   const seen = new Set();
   let signature = '';
+  let zoom = null; // null = fit to the panel width
+  const applyZoom = () => {
+    const chart = canvas.querySelector('svg');
+    if (!chart) return;
+    const natural = Number(chart.getAttribute('width'));
+    const naturalHeight = Number(chart.getAttribute('height'));
+    const scale = zoom ?? Math.min(1, Math.max(0.3, (canvas.clientWidth - 2) / natural));
+    chart.style.width = `${natural * scale}px`;
+    chart.style.height = `${naturalHeight * scale}px`;
+  };
+  const zoomBy = factor => {
+    const chart = canvas.querySelector('svg');
+    const current = chart ? chart.getBoundingClientRect().width / Number(chart.getAttribute('width')) : 1;
+    zoom = Math.min(2, Math.max(0.3, current * factor));
+    applyZoom();
+  };
+  const tools = h('div', {class: 'toolbar mindmap-zoom'},
+    h('button', {type: 'button', class: 'button small', onclick: () => zoomBy(1 / 1.25), 'aria-label': t('mindmap.zoomOut')}, '−'),
+    h('button', {type: 'button', class: 'button small', onclick: () => { zoom = null; applyZoom(); }}, t('mindmap.fit')),
+    h('button', {type: 'button', class: 'button small', onclick: () => zoomBy(1.25), 'aria-label': t('mindmap.zoomIn')}, '+'));
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { if (zoom === null) applyZoom(); }) : null;
+  observer?.observe(canvas);
+  ctx.onDispose?.(() => observer?.disconnect());
   const select = node => {
     detail.className = 'mindmap-detail';
     detail.replaceChildren(h('strong', {}, node.label), node.note ? h('p', {}, node.note) : h('p', {class: 'muted'}, t('mindmap.noNote')),
@@ -102,9 +125,10 @@ export function liveMindMap(ctx, projectId, {compact = false} = {}) {
     if (first) data.nodes.forEach(node => seen.add(node.id));
     canvas.replaceChildren(data.nodes.length > 1 ? drawMindMap(data.nodes, {seen, onSelect: select}) : h('p', {class: 'muted mindmap-empty'}, t('mindmap.empty')));
     data.nodes.forEach(node => seen.add(node.id));
+    requestAnimationFrame(applyZoom);
     stamp.textContent = data.updated_at ? `${t('mindmap.updated')} ${new Date(data.updated_at).toLocaleTimeString()}` : '';
   }
   void refresh().catch(() => {});
   ctx.poll(refresh, 3000);
-  return h('div', {class: 'mindmap stack'}, h('div', {class: 'row spread'}, h('span', {class: 'mindmap-live'}, h('span', {class: 'pulse', 'aria-hidden': 'true'}), t('mindmap.live')), stamp), canvas, detail);
+  return h('div', {class: 'mindmap stack'}, h('div', {class: 'row spread wrap'}, h('span', {class: 'mindmap-live'}, h('span', {class: 'pulse', 'aria-hidden': 'true'}), t('mindmap.live'), stamp), tools), canvas, detail);
 }

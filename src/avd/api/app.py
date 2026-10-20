@@ -373,6 +373,9 @@ def create_app(
             try:
                 response = await call_next(request)
                 status = response.status_code
+                if request.url.path == "/" or request.url.path.startswith("/static/"):
+                    # Revalidate UI files on every load so updates are never stale.
+                    response.headers["Cache-Control"] = "no-cache"
                 return response
             finally:
                 _LOGGER.info(

@@ -271,3 +271,6 @@ summary { cursor: pointer; overflow-wrap: anywhere; }
 .mindmap-detail { border-left: var(--active-width) solid var(--text); padding: var(--space-1) var(--space-2); font-size: var(--font-small); }
 .mindmap-detail.muted { border-left-color: var(--border); }
 .mindmap-detail p { margin: var(--space-half) 0; white-space: pre-wrap; }
+
+.mindmap-zoom .button { min-width: 32px; }
+.mindmap-live small { margin-left: var(--space-1); }
