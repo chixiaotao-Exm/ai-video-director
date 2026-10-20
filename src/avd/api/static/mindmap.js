@@ -114,6 +114,8 @@ export function liveMindMap(ctx, projectId, {compact = false} = {}) {
     apply();
   };
   canvas.addEventListener('wheel', event => {
+    // Beside the chat, a plain wheel scrolls the side column; Ctrl+wheel zooms.
+    if (compact && !event.ctrlKey) return;
     event.preventDefault();
     const box = canvas.getBoundingClientRect();
     zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - box.left, event.clientY - box.top);
@@ -174,5 +176,5 @@ export function liveMindMap(ctx, projectId, {compact = false} = {}) {
   ctx.poll(refresh, 3000);
   return h('div', {class: 'mindmap stack'},
     h('div', {class: 'row spread wrap'}, h('span', {class: 'mindmap-live'}, h('span', {class: 'pulse', 'aria-hidden': 'true'}), t('mindmap.live'), stamp), tools),
-    canvas, h('small', {class: 'muted'}, t('mindmap.controls')), detail);
+    canvas, h('small', {class: 'muted'}, t(compact ? 'mindmap.controlsCompact' : 'mindmap.controls')), detail);
 }

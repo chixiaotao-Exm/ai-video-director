@@ -158,3 +158,20 @@ input:focus, textarea:focus, select:focus { background: #FFFFFF; border-color: v
 .agent-state { margin-left: auto; font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
 .agent-body { margin-top: 6px; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
 .agent-body .bubble { font-size: 12.5px; }
+
+/* Chat tab: a fixed, narrower director column; the side column scrolls on its own. */
+.project-chat-grid {
+  grid-template-columns: minmax(380px, 0.9fr) minmax(0, 1.3fr);
+  height: calc(100vh - var(--header-height) - 214px);
+  min-height: 480px;
+  align-items: stretch;
+}
+.project-chat-grid > .chat-panel.wechat { height: 100%; min-height: 0; }
+.project-chat-grid > .chat-panel.wechat .chat-log { height: auto; flex: 1; min-height: 0; }
+.project-chat-grid > aside { height: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-width: thin; }
+.project-chat-grid > aside .mindmap-canvas.compact { height: 440px !important; }
+@media (max-width: 900px) {
+  .project-chat-grid { height: auto; grid-template-columns: minmax(0, 1fr); }
+  .project-chat-grid > .chat-panel.wechat { height: 70vh; }
+  .project-chat-grid > aside { height: auto; overflow: visible; }
+}

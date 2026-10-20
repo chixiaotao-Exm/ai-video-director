@@ -625,6 +625,7 @@ const STRINGS = {
   "mindmap.title": "思维导图",
   "mindmap.live": "实时",
   "mindmap.fit": "适应画布",
+  "mindmap.controlsCompact": "按住左键拖动画布，Ctrl+滚轮放大缩小（直接滚轮是上下翻动右侧）。",
   "mindmap.controls": "按住左键拖动画布，滚轮放大缩小，点击节点看详情。",
   "mindmap.zoomIn": "放大",
   "mindmap.zoomOut": "缩小",
