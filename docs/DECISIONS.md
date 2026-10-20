@@ -107,3 +107,11 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Carry a permanent confirmed boolean through queue retries; rejected as an approval bypass.
 - **Decision:** Add a prompt-only fictional sheet path with explicit human review/consent; do not use uploaded biometric references before authorization.
 - **Alternatives:** Leave the sheet handler unreachable or auto-consent generated assets; rejected.
+
+## T12
+
+- **Date:** 2026-10-20
+- **Decision:** The offline demo uses FFmpeg-only synthetic cards, tones and passthrough media, but still exercises the production ProjectRepo, queue, workers and RebuildEngine. It creates an isolated run database and only replaces a convenience export outside immutable version directories.
+- **Alternatives:** Mock media or bypass the engine; rejected because the milestone requires a real MP4 and proves incremental behavior.
+- **Decision:** Ambient paid cost/provider settings are ignored for this local stub; the demo project has a zero budget, zero estimated costs and no network-capable provider. The generated character/voice are synthetic and still pass through explicit consent fields.
+- **Alternatives:** Require API keys or treat the synthetic assets as human identity; rejected for offline safety and compliance.

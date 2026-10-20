@@ -88,3 +88,9 @@
 - Audited all SPEC sections; fixed database immutability/path constraints, atomic asset storage, revert consistency, GPU leases/fencing, detached sessions, cancellation/retry, cost durability, model/workflow cache snapshots and review/budget bypasses.
 - Added fictional character-sheet creation/review, centralized image routing and consistent smoke configuration/accounting.
 - Verification: 381 tests passed, 3 skipped; Ruff and mypy green. Remaining environment/service requirements and the upstream TestClient warning are listed in REVIEW.md.
+
+## T12 — offline real-media demo
+
+- Added `python -m avd.demo`: real FFmpeg cards, slow zoom clips, sine audio, passthrough lipsync, subtitles and final AI label through the real queue/rebuild engine.
+- Demo output showed 16 initial generated nodes, exactly 4 reruns after the shot-2 line edit, and 4 cache hits on an unchanged recipe. Verified MP4 duration 6 seconds and metadata comment `AI-generated`.
+- Tests: 394 passed, 1 skipped (Windows symlink capability); real-media tests run with repository-local verified FFmpeg/ffprobe. No network or paid calls. Ruff, formatting and mypy all pass.

@@ -97,6 +97,14 @@ python -m pytest -q
 
 `scripts/smoke_comfyui.py`、`smoke_llm.py`、`smoke_analysis.py`、`smoke_image.py`、`smoke_media.py`、`smoke_director.py` 是显式手动检查入口。缺少配置时正常退出并说明原因；配置真实服务后运行可能产生费用。
 
+完全离线的真实媒体演示不需要模型或网络：
+
+```text
+python -m avd.demo
+```
+
+它用 FFmpeg 生成文字卡片、慢速缩放、正弦音和字幕，走真实队列/重建引擎，修改第 2 镜头台词后打印只重跑的节点和缓存命中。演示数据库与不可变版本保存在 `data/demo/runs/`，便利导出为 `data/demo/final.mp4`。仓库自带的 `data/tools/ffmpeg/`（若已按进度下载）只用于本地验证，不提交二进制。
+
 里程碑记录见 [docs/PROGRESS.md](docs/PROGRESS.md)，实现决策见 [docs/DECISIONS.md](docs/DECISIONS.md)。
 
 ## Quality checks and recovery

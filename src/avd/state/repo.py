@@ -63,7 +63,7 @@ class ProjectRepo:
         title: str,
         source_video_path: str | None = None,
         analysis_result: Mapping[str, Any] | None = None,
-        budget_limit: float = 0.0,
+        budget_limit: float | None = 0.0,
     ) -> Project:
         """Create and flush a project."""
 

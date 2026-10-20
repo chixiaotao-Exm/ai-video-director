@@ -1,5 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
+$mediaTools = Join-Path (Get-Location) 'data/tools/ffmpeg'
+if ((Test-Path "$mediaTools/ffmpeg.exe") -and (Test-Path "$mediaTools/ffprobe.exe")) {
+    $env:PATH = $mediaTools + [IO.Path]::PathSeparator + $env:PATH
+}
 $checkPython = Join-Path (Get-Location) '.venv/Scripts/python.exe'
 if (-not (Test-Path -LiteralPath $checkPython)) { $checkPython = 'python' }
 & $checkPython -m ruff check .
