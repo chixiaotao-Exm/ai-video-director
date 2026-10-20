@@ -68,6 +68,7 @@ def init_db(engine: Engine) -> None:
 
     # Importing the job model registers it on the shared declarative metadata.
     from avd.jobs.models import Job  # noqa: F401
+    from avd.llm.ledger import CostEntry  # noqa: F401
 
     Base.metadata.create_all(engine)
 

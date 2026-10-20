@@ -33,3 +33,15 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Async client; rejected because the current queue workers and executor interfaces are synchronous.
 - **Decision:** Checked-in workflows are strict placeholder contracts and must be replaced with exported ComfyUI API JSON before real generation.
 - **Alternatives:** Pretend placeholder graphs are runnable; rejected because model/node availability is deployment-specific.
+
+## T05
+
+- **Date:** 2026-10-20
+- **Decision:** Preserve the specification's model defaults as configuration, without claiming that any provider account or relay exposes them. Gemini requires an explicit model.
+- **Alternatives:** Guessing alternative model names; rejected because the user supplied exact defaults.
+- **Decision:** `budget_limit=None` means unlimited; `0` means a literal zero budget. A check does not charge; completed calls are charged through the cost ledger in the caller's transaction.
+- **Alternatives:** Treat zero as unlimited; rejected because it silently disables the budget guard.
+- **Decision:** Prices are configured in USD per million tokens. Unknown rates warn and record zero as required; deployment must fill its provider/relay price table.
+- **Alternatives:** Hard-coded unverified prices; rejected because relay prices and model access vary.
+- **Decision:** The router estimates text input size plus configured maximum output tokens before a call, then records provider-reported usage afterward. Estimates are advisory; callers may supply an explicit estimate for multimodal calls.
+- **Alternatives:** Claim exact prices/token counts before execution; rejected because provider usage is only known afterward.

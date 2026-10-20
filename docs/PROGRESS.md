@@ -35,3 +35,11 @@
 - Added configurable local/remote ComfyUI profiles and offline MockTransport tests.
 - Added test network blocking and manual smoke script.
 - Tests: 49 passed.
+
+## T05 — LLM routing, cost ledger, and budget guard
+
+- Added role-based routing, normalized tool calls/usage, one structured repair retry, three lazy SDK adapters, and FakeProvider.
+- Added CostEntry/CostLedger, actual usage accounting, budget/confirmation checks, and relay configuration.
+- Added SDK-double contracts and Gemini inline/file-upload tests without network; manual LLM smoke skips without keys.
+- Tests: 73 passed.
+- External requirements: enabled model names, provider/relay keys and accurate price table. Gemini has no guessed default. Real SDK calls were not exercised.

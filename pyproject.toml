@@ -18,6 +18,14 @@ dependencies = [
 dev = [
   "pytest",
 ]
+llm = [
+  "anthropic>=0.40",
+  "openai>=1.50",
+  "google-genai>=1",
+]
+all = [
+  "avd[llm]",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
