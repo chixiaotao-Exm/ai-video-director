@@ -61,3 +61,15 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Delete/recreate graphs or regenerate every shot; rejected because versions must be immutable and edits incremental.
 - **Decision:** Changing shot count requires a new project for now. Targeted edits append a readable script snapshot without propagating from the shared script; only the actual frame/video/voice recipe edits propagate.
 - **Alternatives:** Implement graph resizing/archive semantics; deferred because T07 specifies field updates, not shot insertion/deletion.
+
+## T08
+
+- **Date:** 2026-10-20
+- **Decision:** Rebuild owns short DB transactions; authoring code commits before scheduling. Queue insertion and node RUNNING state are written atomically. Completion reconciliation is repeatable after lost callbacks.
+- **Alternatives:** Submit jobs in a separate transaction from node changes; rejected because a crash could leave running nodes without jobs.
+- **Decision:** Generated-node recipes include upstream output fingerprints. Shared script content is already mapped to each shot, so whole-script version changes do not invalidate unrelated shots. Stale job results are preserved as history but do not clear later edits.
+- **Alternatives:** Hash only local recipes; rejected because changed audio would incorrectly reuse old lipsync/subtitles.
+- **Decision:** Each attempt writes a separate subdirectory under its version run directory; files are never overwritten. TTS uses the first validated voice sample because the template accepts one sample.
+- **Alternatives:** Overwrite partial retry outputs or invent multi-sample workflow inputs; rejected.
+- **Decision:** Final media is normalized to the first shot's even dimensions, 30 fps, stereo 48 kHz audio, with silence for missing audio, visible AI-generated text and metadata. Each shot subtitle uses actual voice duration.
+- **Alternatives:** Require identical generated stream formats or omit disclosures; rejected.

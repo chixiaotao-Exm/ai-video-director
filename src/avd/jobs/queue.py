@@ -51,6 +51,7 @@ class JobQueue:
         node_id: str | None = None,
         priority: int = 0,
         max_attempts: int = 3,
+        session: Session | None = None,
     ) -> str:
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
@@ -65,11 +66,15 @@ class JobQueue:
             priority=priority,
             created_at=_next_created_at(),
         )
-        with self.session_factory() as session:
+        if session is not None:
             session.add(job)
             session.flush()
+            return job.id
+        with self.session_factory() as owned_session:
+            owned_session.add(job)
+            owned_session.flush()
             job_id = job.id
-            session.commit()
+            owned_session.commit()
         return job_id
 
     def get(self, job_id: str) -> Job | None:

@@ -58,3 +58,11 @@
 - Added targeted edits and same-count reapplication that dirty only changed chains.
 - Tests: 132 passed, 1 skipped (FFmpeg unavailable). No live model used.
 - Deliberate limit: changing shot count requires a new project; field edits are incremental.
+
+## T08 — executors and incremental rebuild engine
+
+- Added reference-image generation, ComfyUI video/TTS/lipsync, duration-based SRT burn-in, final concatenation/audio normalization and visible/metadata AI labels.
+- Added transactional scheduling, pending budget checks, dependency-aware caching, callback/restart reconciliation, consent gates and stale-completion preservation.
+- Added two-shot end-to-end tests with real queue/fake handlers, incremental edits, revert cache, failed prerequisites, revoked consent, duplicate scheduling and callback replay.
+- Tests: 195 passed, 2 skipped (real FFmpeg media checks unavailable on this PATH).
+- External requirements: exported runnable ComfyUI workflows/models, enabled image API key/model, explicit executor cost estimates, FFmpeg with libx264/subtitles/drawtext filters. No paid calls made.
