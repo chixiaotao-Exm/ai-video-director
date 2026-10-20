@@ -543,6 +543,13 @@ def create_app(
             session.commit()
             return _project_data(project)
 
+    @application.get("/projects/{project_id}/mindmap")
+    def project_mindmap(project_id: str) -> dict[str, Any]:
+        from avd.director import mindmap
+
+        with current_runtime().session_factory() as session:
+            return mindmap.tree(session, _project(session, project_id))
+
     @application.post("/projects/{project_id}/source", status_code=201)
     async def upload_source(project_id: str, file: UploadFile) -> dict[str, Any]:
         await run_in_threadpool(ensure_project, project_id)

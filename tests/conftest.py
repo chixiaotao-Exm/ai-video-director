@@ -2,6 +2,7 @@
 
 import socket
 import threading
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -35,3 +36,19 @@ def forbid_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket.socket, "connect", connect)
     monkeypatch.setattr(socket.socket, "connect_ex", blocked)
     monkeypatch.setattr(socket, "create_connection", blocked)
+
+
+@pytest.fixture(autouse=True)
+def ignore_local_settings_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the developer's real data/settings.json (keys, models) out of tests."""
+    from avd import settings_store
+
+    real = (Path(__file__).resolve().parents[1] / "data" / "settings.json").resolve()
+    original = settings_store._read_file
+
+    def read(path: Path) -> dict[str, Any]:
+        if Path(path).resolve() == real:
+            return {}
+        return original(path)
+
+    monkeypatch.setattr(settings_store, "_read_file", read)

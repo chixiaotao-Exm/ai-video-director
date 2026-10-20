@@ -40,7 +40,9 @@ class OpenAIProvider:
         *,
         client: Any = None,
         max_output_tokens: int = 4096,
+        label: str = "OpenAI",
     ) -> None:
+        self.label = label
         self.api_key = api_key
         self.base_url = base_url
         self._client = client
@@ -49,7 +51,9 @@ class OpenAIProvider:
     def _get_client(self) -> Any:
         if self._client is None:
             if not self.api_key:
-                raise ProviderConfigurationError("Set AVD_OPENAI_API_KEY before using OpenAI")
+                raise ProviderConfigurationError(
+                    f"Set the {self.label} API key in Settings before using {self.label}"
+                )
             try:
                 sdk = importlib.import_module("openai")
             except ImportError as exc:

@@ -100,10 +100,10 @@ def finish_frames(harness: Any) -> None:
         session.commit()
 
 
-def test_all_nineteen_tools_have_closed_input_schemas(harness: Any) -> None:
+def test_all_twenty_tools_have_closed_input_schemas(harness: Any) -> None:
     schemas = harness.tools.schemas()
-    assert len(schemas) == 19
-    assert len({schema["name"] for schema in schemas}) == 19
+    assert len(schemas) == 20
+    assert len({schema["name"] for schema in schemas}) == 20
     assert all(schema["input_schema"]["additionalProperties"] is False for schema in schemas)
     for schema in schemas:
         assert not {"confirmed", "consent_confirmed", "approved_by", "project_id"} & set(

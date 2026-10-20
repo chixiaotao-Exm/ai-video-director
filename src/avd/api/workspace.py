@@ -316,9 +316,20 @@ def install_workspace_routes(application: FastAPI, current_runtime: Callable[[],
         runtime = current_runtime()
         root = runtime.settings.data_dir.expanduser().resolve()
         with runtime.session_factory() as session:
+            usage = {
+                project_id: (int(incoming), int(outgoing))
+                for project_id, incoming, outgoing in session.execute(
+                    select(
+                        CostEntry.project_id,
+                        func.coalesce(func.sum(CostEntry.input_tokens), 0),
+                        func.coalesce(func.sum(CostEntry.output_tokens), 0),
+                    ).group_by(CostEntry.project_id)
+                )
+            }
             projects = []
             for project in session.scalars(select(Project).order_by(Project.created_at.desc())):
                 item = _budget_data(session, project)
+                item["input_tokens"], item["output_tokens"] = usage.get(project.id, (0, 0))
                 statuses = {node.status for node in project.nodes}
                 item["status"] = next(
                     (

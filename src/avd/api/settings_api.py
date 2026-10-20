@@ -103,6 +103,40 @@ def install_settings_routes(
         app.state.connection_checks.clear()
         return public_settings(settings) | {"restart_required": []}
 
+    @app.get("/settings/models/{provider}")
+    def list_models(provider: str) -> dict[str, Any]:
+        """List model ids the configured endpoint offers, for the settings dropdowns."""
+        if provider not in PROVIDERS:
+            raise HTTPException(404, "Unknown provider")
+        settings = runtime_getter().settings
+        secret = getattr(settings, f"{provider}_api_key")
+        if secret is None or not secret.get_secret_value():
+            return {"provider": provider, "models": [], "error": "API key not set"}
+        key = secret.get_secret_value()
+        base = (
+            getattr(settings, f"{provider}_base_url")
+            or {
+                "anthropic": "https://api.anthropic.com",
+                "openai": "https://api.openai.com/v1",
+                "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+                "deepseek": "https://api.deepseek.com",
+            }[provider]
+        )
+        url = f"{base}/v1/models" if provider == "anthropic" else f"{base}/models"
+        headers = {"Authorization": f"Bearer {key}"}
+        if provider == "anthropic":
+            headers.update({"x-api-key": key, "anthropic-version": "2023-06-01"})
+        try:
+            transport = getattr(app.state, "models_test_transport", None)
+            with httpx.Client(timeout=15, transport=transport, follow_redirects=False) as client:
+                response = client.get(url, headers=headers)
+                response.raise_for_status()
+                items = response.json().get("data", [])
+            models = sorted({str(item["id"]) for item in items if item.get("id")})
+        except Exception as exc:
+            return {"provider": provider, "models": [], "error": _failure_detail(exc, settings)}
+        return {"provider": provider, "models": models}
+
     @app.post("/settings/test/{provider}")
     def test_connection(
         provider: str, body: ConnectionTestInput = Body(default_factory=ConnectionTestInput)

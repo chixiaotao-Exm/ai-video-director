@@ -106,17 +106,34 @@ function createCharacter(ctx) {
   modal = dialog(t("asset.createCharacter"), content);
 }
 
+// Voice engines the GPU server can run; each explains itself when chosen.
+const VOICE_ENGINES = ["cosyvoice", "gpt-sovits", "f5-tts", "fish-speech"];
+const EMOTIONS = ["neutral", "happy", "excited", "calm", "serious", "sad"];
+
 function createVoice(ctx) {
   let modal;
+  const engine = select(VOICE_ENGINES.map(value => ({value, label: t(`asset.engineName.${value}`)})), "cosyvoice", {name: "engine", required: true});
+  const explain = h("div", {class: "engine-explain"});
+  const describe = () => {
+    explain.replaceChildren(
+      h("p", {}, t(`asset.engineAbout.${engine.value}`)),
+      h("p", {class: "muted"}, t(`asset.engineFit.${engine.value}`)),
+    );
+  };
+  engine.addEventListener("change", describe);
+  describe();
   const content = form([
-    field(t("asset.name"), input("text", "", {name: "name", required: true, maxlength: 255})),
+    field(t("asset.name"), input("text", "", {name: "name", required: true, maxlength: 255, placeholder: t("asset.voiceNamePlaceholder")})),
     field(t("asset.samples"), input("file", "", {name: "samples", required: true, multiple: true, accept: ".wav,.mp3,.m4a,.flac"}), t("asset.samplesHint")),
-    field(t("asset.engine"), input("text", "cosyvoice", {name: "engine", required: true, maxlength: 255}), t("asset.engineHint")),
-    field(t("asset.engineVoice"), input("text", "", {name: "engine_voice_id", maxlength: 255}), t("asset.optional")),
-    h("div", {class: "grid-2"},
-      field(t("asset.speed"), input("number", "1", {name: "speed", min: 0.1, max: 4, step: 0.05, required: true})),
-      field(t("asset.emotion"), input("text", "neutral", {name: "emotion", required: true})),
-    ),
+    field(t("asset.engine"), engine, t("asset.engineHint")),
+    explain,
+    h("details", {}, h("summary", {}, t("asset.voiceAdvanced")), h("div", {class: "form-stack details-content"},
+      field(t("asset.engineVoice"), input("text", "", {name: "engine_voice_id", maxlength: 255}), t("asset.engineVoiceHint")),
+      h("div", {class: "grid-2"},
+        field(t("asset.speed"), input("number", "1", {name: "speed", min: 0.1, max: 4, step: 0.05, required: true}), t("asset.speedHint")),
+        field(t("asset.emotion"), select(EMOTIONS.map(value => ({value, label: t(`asset.emotionName.${value}`)})), "neutral", {name: "emotion", required: true})),
+      ),
+    )),
     h("p", {class: "muted"}, t("asset.createConsentHint")),
   ], async data => {
     const sample_paths = [];

@@ -1,6 +1,7 @@
 """Deterministic scene detection and transcription with optional local models."""
 
 from pathlib import Path
+from typing import Any
 
 from avd.agents.analysis.media import extract_audio, probe
 from avd.agents.analysis.models import Segment, ShotSpan
@@ -21,6 +22,18 @@ def detect_shots(video: Path | str) -> list[ShotSpan]:
     return [ShotSpan(start_s=start.get_seconds(), end_s=end.get_seconds()) for start, end in scenes]
 
 
+def _read_pcm16(path: Path) -> Any:
+    import wave
+
+    import numpy as np
+
+    with wave.open(str(path), "rb") as stream:
+        if stream.getsampwidth() != 2 or stream.getnchannels() != 1:
+            raise ValueError("Transcription expects 16-bit mono PCM WAV")
+        frames = stream.readframes(stream.getnframes())
+    return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 def transcribe(wav: Path | str, model_size: str = "small") -> list[Segment]:
     """Transcribe locally; importing this module never loads a model or SDK."""
     if not model_size.strip():
@@ -31,7 +44,9 @@ def transcribe(wav: Path | str, model_size: str = "small") -> list[Segment]:
         raise RuntimeError("Transcription requires the 'analysis' extra (faster-whisper)") from exc
 
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(str(wav), beam_size=5)
+    # Pass decoded samples rather than a path: faster-whisper's own PyAV decoding
+    # breaks with newer PyAV releases, and extract_audio already wrote 16 kHz mono PCM.
+    segments, _ = model.transcribe(_read_pcm16(Path(wav)), beam_size=5)
     return [
         Segment(start_s=segment.start, end_s=segment.end, text=segment.text.strip())
         for segment in segments

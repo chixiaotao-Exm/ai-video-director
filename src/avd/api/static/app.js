@@ -1,7 +1,7 @@
-import {api} from './api.js';
-import {h, button, select, badge, money, notice, icon, empty, form, field, input, dialog, pageHeader, media, link} from './components.js';
+import {api, upload} from './api.js';
+import {h, button, select, badge, notice, icon, empty, form, field, input, dialog, pageHeader, media, link} from './components.js';
 import {t} from './i18n/zh.js';
-import {render as projectPage} from './pages/project.js';
+import {render as projectPage, chatPanel, tokens} from './pages/project.js';
 import {render as assetsPage} from './pages/assets.js';
 import {render as jobsPage} from './pages/jobs.js';
 import {render as costsPage} from './pages/costs.js';
@@ -27,7 +27,7 @@ function saveProject(id) {
 
 function renderNavigation(active) {
   nav.replaceChildren(...NAV.map(([key, glyph]) => {
-    const href = key === 'dashboard' ? '#/' : key === 'project' ? (state.projectId ? `#/projects/${state.projectId}/overview` : '#/projects') : `#/${key}`;
+    const href = key === 'dashboard' ? '#/' : key === 'project' ? (state.projectId ? `#/projects/${state.projectId}/chat` : '#/projects') : `#/${key}`;
     return h('a', {class: `nav-link ${active === key ? 'active' : ''}`, href, ...(active === key ? {'aria-current': 'page'} : {})}, icon(glyph), t(`nav.${key}`));
   }));
 }
@@ -36,45 +36,58 @@ function updateTopbar() {
   const switcher = select([{value:'',label:t('shell.selectProject')}, ...state.projects.map(project => ({value: project.id,label:project.title}))], state.projectId, {'aria-label': t('shell.selectProject')});
   switcher.addEventListener('change', () => {
     saveProject(switcher.value);
-    if (switcher.value && location.hash.startsWith('#/projects')) navigate(`#/projects/${switcher.value}/overview`);
+    if (switcher.value && location.hash.startsWith('#/projects')) navigate(`#/projects/${switcher.value}/chat`);
     else void renderPage();
   });
   document.querySelector('#project-switcher').replaceChildren(switcher);
   const selected = state.projects.find(project => project.id === state.projectId);
-  document.querySelector('#top-budget').textContent = selected ? t('shell.budget', {spent: money(selected.spent), limit:money(selected.budget_limit)}) : t('shell.noProject');
+  document.querySelector('#top-budget').textContent = selected ? t('shell.tokens', {input: tokens(selected.input_tokens), output: tokens(selected.output_tokens)}) : t('shell.noProject');
 }
 
+// The usual start: pick a reference video; the director watches it and reports in chat.
 function newProject(ctx) {
   let modal;
+  const file = input('file', '', {name: 'source', accept: '.mp4,.mov,.webm,.mkv,.avi', required: true});
+  const title = input('text', '', {name: 'title', maxLength: 255, placeholder: t('dashboard.namePlaceholder')});
+  file.addEventListener('change', () => {
+    if (!title.value && file.files?.[0]) title.value = file.files[0].name.replace(/\.[^.]+$/, '').slice(0, 255);
+  });
   const create = form([
-    field(t('dashboard.projectName'), input('text','',{name:'title',required:true,maxLength:255,placeholder:t('dashboard.namePlaceholder')})),
-    field(t('dashboard.budget'), input('number','0',{name:'budget',min:0,step:.01,required:true}),t('dashboard.budgetHelp'))
+    field(t('dashboard.sourceVideo'), file, t('dashboard.sourceHelp')),
+    field(t('dashboard.projectName'), title, t('dashboard.nameHelp')),
   ], async data => {
-    const result = await api('/projects',{method:'POST',body:{title:String(data.get('title')).trim(),budget_limit:Number(data.get('budget'))}});
-    saveProject(result.id); modal.close(); notice(t('dashboard.created')); navigate(`#/projects/${result.id}/overview`);
-  },t('dashboard.create'));
-  modal = dialog(t('dashboard.new'),create);
-  void api('/settings',{signal:ctx.signal}).then(settings => {
-    if (settings.settings.default_budget_limit != null) create.elements.budget.value = settings.settings.default_budget_limit;
-  }).catch(() => {});
+    const source = data.get('source');
+    const name = String(data.get('title') || '').trim() || (source?.name || t('dashboard.untitled')).replace(/\.[^.]+$/, '');
+    const result = await api('/projects', {method: 'POST', body: {title: name.slice(0, 255), budget_limit: null}});
+    saveProject(result.id);
+    notice(t('dashboard.uploading'));
+    await upload(source, result.id);
+    modal.close();
+    notice(t('dashboard.analysisStarted'));
+    navigate(`#/projects/${result.id}/chat`);
+  }, t('dashboard.startAnalysis'));
+  modal = dialog(t('dashboard.new'), create);
 }
 
 async function dashboard(ctx) {
   const data = await api('/dashboard',{signal:ctx.signal});
   const projects = data.projects;
-  const totalSpend = projects.reduce((sum, project) => sum + project.spent,0);
+  const totalTokens = projects.reduce((sum, project) => sum + (project.input_tokens || 0) + (project.output_tokens || 0), 0);
   const completed = projects.filter(project => project.status === 'clean' || project.status === 'succeeded').length;
   const pending = projects.filter(project => project.status === 'running').length;
   const stat = (label,value,note) => h('div',{class:'stat'},h('span',{class:'muted'},label),h('strong',{},value),h('small',{class:'muted'},note));
   const root = h('div',{class:'page dashboard-page'},
     pageHeader(t('dashboard.title'),t('dashboard.subtitle'),button([icon('plus',16),t('dashboard.new')],()=>newProject(ctx),{primary:true})),
-    h('div',{class:'stats-grid'},stat(t('dashboard.projects'),projects.length,t('dashboard.savedLocally')),stat(t('dashboard.active'),pending,t('dashboard.queueContinues')),stat(t('dashboard.complete'),completed,t('dashboard.versioned')),stat(t('dashboard.spend'),money(totalSpend),t('dashboard.estimated')))
+    h('section',{class:'card start-card'},
+      h('div',{class:'stack compact'},h('h2',{},t('dashboard.startTitle')),h('p',{class:'muted'},t('dashboard.startHelp'))),
+      button([icon('film',18),t('dashboard.startButton')],()=>newProject(ctx),{primary:true})),
+    h('div',{class:'stats-grid'},stat(t('dashboard.projects'),projects.length,t('dashboard.savedLocally')),stat(t('dashboard.active'),pending,t('dashboard.queueContinues')),stat(t('dashboard.complete'),completed,t('dashboard.versioned')),stat(t('dashboard.tokens'),tokens(totalTokens),t('dashboard.tokensNote')))
   );
   const cards = projects.map(project => h('article',{class:'card project-card'},
-    h('a',{href:`#/projects/${project.id}/overview`,'aria-label':project.title},project.thumbnail_path ? media(project.thumbnail_path,project.thumbnail_kind,{...(project.thumbnail_kind==='video'?{controls:false,muted:true}:{}),alt:project.title}) : h('div',{class:'media-empty'},icon('film',32),t('dashboard.noThumbnail'))),
-    h('div',{class:'row spread'},h('h3',{},link(project.title,`#/projects/${project.id}/overview`)),badge(project.status)),
-    h('div',{class:'project-card-meta'},h('span',{},t('dashboard.spent',{value:money(project.spent)})),h('span',{},t('dashboard.limit',{value:money(project.budget_limit)}))),
-    h('a',{class:'row spread',href:`#/projects/${project.id}/overview`},t('dashboard.open'),icon('arrow',16))
+    h('a',{href:`#/projects/${project.id}/chat`,'aria-label':project.title},project.thumbnail_path ? media(project.thumbnail_path,project.thumbnail_kind,{...(project.thumbnail_kind==='video'?{controls:false,muted:true}:{}),alt:project.title}) : h('div',{class:'media-empty'},icon('film',32),t('dashboard.noThumbnail'))),
+    h('div',{class:'row spread'},h('h3',{},link(project.title,`#/projects/${project.id}/chat`)),badge(project.status)),
+    h('div',{class:'project-card-meta'},h('span',{},t('dashboard.tokenLine',{input:tokens(project.input_tokens),output:tokens(project.output_tokens)}))),
+    h('a',{class:'row spread',href:`#/projects/${project.id}/chat`},t('dashboard.open'),icon('arrow',16))
   ));
   root.append(h('section',{class:'stack'},h('div',{class:'section-heading'},h('h2',{},t('dashboard.recent')),h('small',{class:'muted'},t('dashboard.projectCount',{n:projects.length}))),cards.length?h('div',{class:'project-grid'},cards):empty(t('dashboard.empty'),t('dashboard.emptyHelp'),button(t('dashboard.new'),()=>newProject(ctx),{primary:true}))));
   const workerValue = data.system.workers?.workers || [];
@@ -84,11 +97,44 @@ async function dashboard(ctx) {
   const service = (title,note,status,label,href,action) => h('div',{class:'service-row'},h('div',{},h('h3',{},title),h('small',{},note)),h('div',{class:'toolbar'},badge(status,label),link(action,href)));
   root.append(h('section',{class:'card'},h('div',{class:'section-heading'},h('h2',{},t('dashboard.services')),link(t('dashboard.system'), '#/system')),
     h('div',{class:'service-list'},
-      service(t('dashboard.providers'),t('dashboard.providerNote',{n:configured}),configured===3?'ok':'unknown',t(configured===3?'status.ok':'status.unconfigured'),'#/settings',t('common.configure')),
+      service(t('dashboard.providers'),t('dashboard.providerNote',{n:configured}),configured>=2?'ok':'unknown',t(configured>=2?'status.ok':'status.unconfigured'),'#/settings',t('common.configure')),
       service(t('common.comfyui'),data.system.comfyui.profile,data.system.comfyui.status,t(`status.${data.system.comfyui.status}`),'#/settings',t('dashboard.testConnection')),
       service(t('dashboard.workers'),t('dashboard.workerNote',{n:runningWorkers}),'unknown',t('dashboard.runningCount',{n:runningWorkers}),'#/system',t('common.manage'))
     )));
   return root;
+}
+
+let dockOpen = false;
+try { dockOpen = localStorage.getItem('avd.dock') === 'open'; } catch { /* optional */ }
+
+function renderDock(ctx, onChatTab) {
+  document.querySelector('#director-dock')?.remove();
+  if (!state.projectId || onChatTab) return;
+  const projectId = state.projectId;
+  const title = state.projects.find(project => project.id === projectId)?.title || '';
+  const body = h('div', {class: 'dock-body'});
+  const dock = h('aside', {id: 'director-dock', class: `director-dock${dockOpen ? ' open' : ''}`, 'aria-label': t('dock.label')});
+  const toggle = button([icon('project', 18), t('dock.open')], () => setOpen(!dockOpen));
+  toggle.classList.add('dock-toggle');
+  const header = h('div', {class: 'dock-header'},
+    h('div', {class: 'stack compact'}, h('strong', {}, t('dock.title')), h('small', {class: 'muted'}, title)),
+    h('div', {class: 'toolbar'}, link(t('dock.full'), `#/projects/${projectId}/chat`), button(icon('close', 16), () => setOpen(false), {'aria-label': t('dock.close'), small: true})));
+  const loaded = {done: false};
+  async function setOpen(value) {
+    dockOpen = value;
+    try { localStorage.setItem('avd.dock', value ? 'open' : 'closed'); } catch { /* optional */ }
+    dock.classList.toggle('open', value);
+    if (value && !loaded.done) {
+      loaded.done = true;
+      body.replaceChildren(h('div', {class: 'loading-view'}, t('common.loading')));
+      try { body.replaceChildren(await chatPanel(ctx, projectId, {compact: true})); }
+      catch (error) { loaded.done = false; body.replaceChildren(h('p', {class: 'error-text'}, error.message)); }
+    }
+  }
+  dock.append(toggle, h('div', {class: 'dock-panel'}, header, body));
+  document.body.append(dock);
+  ctx.onDispose(() => dock.remove());
+  if (dockOpen) { dockOpen = false; void setOpen(true); }
 }
 
 async function renderPage() {
@@ -123,7 +169,7 @@ async function renderPage() {
     };
     let view;
     if (key === 'projects' && !parts[1]) {
-      if (state.projectId) { navigate(`#/projects/${state.projectId}/overview`); return; }
+      if (state.projectId) { navigate(`#/projects/${state.projectId}/chat`); return; }
       view=h('div',{class:'page'},pageHeader(t('nav.project'),t('dashboard.subtitle')),empty(t('dashboard.empty'),t('dashboard.emptyHelp'),button(t('dashboard.new'),()=>newProject(ctx),{primary:true})));
     } else {
       const page={dashboard,projects:projectPage,assets:assetsPage,jobs:jobsPage,costs:costsPage,settings:settingsPage,system:systemPage}[key];
@@ -131,6 +177,7 @@ async function renderPage() {
     }
     if(serial!==state.serial)return;
     content.replaceChildren(view); content.setAttribute('aria-busy','false');
+    renderDock(ctx, key === 'projects' && (parts[2] || 'chat') === 'chat');
     document.querySelector('#connection').replaceChildren(badge('ok',t('shell.connected')));
     document.title=`${t(`nav.${key==='projects'?'project':key}`)} · ${t('shell.name')}`;
     window.__AVD_READY = true;

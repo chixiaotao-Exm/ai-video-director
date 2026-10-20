@@ -198,3 +198,76 @@ summary { cursor: pointer; overflow-wrap: anywhere; }
 /* Wide data tables scroll inside their panel instead of squeezing text into vertical strips. */
 .table-scroll:has(th:nth-child(5)) > table { min-width: var(--wide-table-width); }
 .storyboard-table.table-scroll > table { min-width: var(--storyboard-width); }
+
+/* Conversation-first project view */
+.chat-log { max-height: none; height: min(64vh, 720px); }
+.chat-panel.compact .chat-log { height: auto; flex: 1; min-height: 0; }
+.chat-message { white-space: normal; }
+.chat-message-user .message-content { white-space: pre-wrap; }
+.chat-message-user { align-self: flex-end; max-width: 85%; margin-left: 0; padding: var(--space-1) var(--space-2); border: var(--border-width) solid var(--border); border-radius: var(--radius); }
+.chat-message-user .message-role { display: none; }
+.message-role { font-size: var(--font-small); color: var(--muted); }
+.markdown { line-height: 1.7; }
+.markdown p, .markdown ul, .markdown ol { margin: 0 0 var(--space-1); }
+.markdown ul, .markdown ol { padding-left: var(--space-3); }
+.markdown h3, .markdown h4, .markdown h5, .markdown h6 { margin: var(--space-2) 0 var(--space-1); font-size: 1em; font-weight: 600; }
+.markdown code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; padding: 0 4px; border: var(--border-width) solid var(--border); border-radius: 4px; }
+.markdown a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.markdown hr { border: 0; border-top: var(--border-width) solid var(--border); margin: var(--space-2) 0; }
+.tool-calls { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.tool-calls .tool-call, .chat-message .tool-call { color: var(--muted); }
+.chat-event { align-self: center; color: var(--muted); font-size: var(--font-small); padding: 2px var(--space-2); border: var(--border-width) solid var(--border); border-radius: 999px; }
+.chat-status:empty { display: none; }
+.chat-activity, .chat-thinking { display: flex; align-items: center; gap: var(--space-1); color: var(--muted); font-size: var(--font-small); }
+.pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--running); animation: avd-pulse 1.2s ease-in-out infinite; flex: none; }
+@keyframes avd-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+.chat-composer { display: flex; flex-direction: column; gap: var(--space-1); border-top: var(--border-width) solid var(--border); padding-top: var(--space-2); }
+.chat-composer textarea { resize: vertical; min-height: 64px; }
+.chat-composer-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+
+/* Start card on the dashboard */
+.start-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-4); }
+.start-card h2 { margin: 0; }
+@media (max-width: 640px) { .start-card { flex-direction: column; align-items: stretch; } }
+
+/* Voice engine explanation */
+.engine-explain { border-left: var(--active-width) solid var(--text); padding: var(--space-1) var(--space-2); }
+.engine-explain p { margin: 0 0 var(--space-half); }
+
+/* Persistent director dock */
+.director-dock { position: fixed; right: var(--space-3); bottom: var(--space-3); z-index: 40; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
+.director-dock .dock-panel { display: none; width: min(420px, calc(100vw - 32px)); height: min(70vh, 640px); background: var(--background); border: var(--border-width) solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgb(0 0 0 / 8%); flex-direction: column; overflow: hidden; }
+.director-dock.open .dock-panel { display: flex; }
+.director-dock.open .dock-toggle { display: none; }
+.dock-toggle { box-shadow: 0 4px 16px rgb(0 0 0 / 8%); }
+.dock-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); padding: var(--space-2); border-bottom: var(--border-width) solid var(--border); }
+.dock-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dock-body .chat-panel { border: 0; border-radius: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; padding: var(--space-2); }
+@media (max-width: 640px) { .director-dock { right: var(--space-2); bottom: var(--space-2); } .director-dock .dock-panel { height: 80vh; } }
+
+/* Live mind map */
+.mindmap-canvas { overflow: auto; border: var(--border-width) solid var(--border); border-radius: var(--radius); min-height: 180px; max-height: 72vh; background: var(--background); }
+.mindmap-canvas.compact { max-height: 340px; }
+.mindmap-empty { padding: var(--space-3); margin: 0; }
+.mindmap-svg { display: block; font-family: inherit; }
+.mm-edge { fill: none; stroke: #C8C8C8; stroke-width: 1.2; }
+.mm-edge.mm-rejected { stroke-dasharray: 4 4; }
+.mm-node { cursor: pointer; outline: none; }
+.mm-node rect { fill: var(--background); stroke: var(--border); stroke-width: 1; transition: stroke .2s; }
+.mm-node text { font-size: 12px; fill: var(--text); }
+.mm-node .mm-tag { font-size: 9px; fill: var(--muted); }
+.mm-node:hover rect, .mm-node:focus rect { stroke: var(--text); }
+.mm-kind-root rect { fill: var(--text); stroke: var(--text); }
+.mm-kind-root text { fill: #FFFFFF; font-weight: 600; }
+.mm-kind-reference rect, .mm-kind-decision rect, .mm-chosen rect { stroke: var(--text); stroke-width: 2; }
+.mm-kind-question rect { stroke-dasharray: 4 3; }
+.mm-rejected text { fill: var(--queued); text-decoration: line-through; }
+.mm-new rect { stroke: var(--running); stroke-width: 2; }
+.mm-new { animation: mm-in .6s ease-out; }
+@keyframes mm-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .mm-new { animation: none; } }
+.mindmap-live { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--font-small); color: var(--muted); }
+.mindmap-detail { border-left: var(--active-width) solid var(--text); padding: var(--space-1) var(--space-2); font-size: var(--font-small); }
+.mindmap-detail.muted { border-left-color: var(--border); }
+.mindmap-detail p { margin: var(--space-half) 0; white-space: pre-wrap; }

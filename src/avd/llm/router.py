@@ -6,6 +6,7 @@ import json
 import math
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from functools import partial
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -75,7 +76,7 @@ class LLMRouter:
             }
             if name == "deepseek":
                 # DeepSeek exposes an OpenAI-compatible Chat Completions API.
-                types["deepseek"] = OpenAIProvider
+                types["deepseek"] = partial(OpenAIProvider, label="DeepSeek")
             if name not in types:
                 raise ProviderConfigurationError(f"Unknown LLM provider: {name!r}")
             key = getattr(self.settings, f"{name}_api_key")

@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import shutil
 import signal
 import sys
 import uuid
@@ -408,6 +410,18 @@ def _json_default(value: Any) -> str:
     return str(value)
 
 
+def _use_bundled_ffmpeg(settings: Settings) -> None:
+    """Put data_dir/tools/ffmpeg on PATH when FFmpeg is not installed system-wide.
+
+    Worker processes inherit the environment, so media jobs find it too.
+    """
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return
+    bundled = settings.data_dir.expanduser().resolve() / "tools" / "ffmpeg"
+    if (bundled / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")).is_file():
+        os.environ["PATH"] = f"{bundled}{os.pathsep}{os.environ.get('PATH', '')}"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run a command and return a shell exit code without exposing a traceback."""
     runtime = None
@@ -420,6 +434,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             overrides["database_url"] = args.database_url
         settings = Settings(**overrides)
         configure_logging(settings.log_format, settings.log_level)
+        _use_bundled_ffmpeg(settings)
         runtime = Runtime(settings)
         result = _run(runtime, args)
         if result is not None:

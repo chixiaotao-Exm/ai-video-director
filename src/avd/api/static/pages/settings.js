@@ -140,7 +140,7 @@ export async function render(ctx) {
           refreshKey();
         });
       }, {danger: true, small: true})),
-      ...provider.models.map(name => field(t(`settings.field.${name}`), input('text', values()[name] || '', {name, required: name !== 'gemini_model'}))),
+      ...provider.models.map(name => field(t(`settings.field.${name}`), modelInput(provider.name, name, values()[name], ctx))),
     ];
     const content = form(fields, async data => {
       await report(status, async () => {
@@ -197,7 +197,27 @@ export async function render(ctx) {
       }), {primary: true}),
     ), priceStatus,
   ));
-  addTab('providers', h('div', {class: 'form-stack'}, h('div', {class: 'grid-2'}, ...providerCards), prices));
+  const rolesStatus = statusLine();
+  const providerOptions = names => names.map(value => ({value, label: t(`settings.provider.${value}`)}));
+  const roles = form([
+    h('p', {class: 'muted'}, t('settings.rolesHint')),
+    h('div', {class: 'grid-2'},
+      field(t('settings.field.analysis_provider'), select(providerOptions(['openai', 'anthropic', 'gemini']), values().analysis_provider, {name: 'analysis_provider'}), t('settings.hint.analysis_provider')),
+      field(t('settings.field.analysis_model'), modelInput('openai', 'analysis_model', values().analysis_model, ctx), t('settings.hint.analysis_model')),
+      field(t('settings.field.web_search_provider'), select(providerOptions(['openai', 'anthropic']), values().web_search_provider, {name: 'web_search_provider'}), t('settings.hint.web_search_provider')),
+      field(t('settings.field.web_search_model'), modelInput('openai', 'web_search_model', values().web_search_model, ctx)),
+    ),
+    h('label', {class: 'checkbox'}, h('input', {type: 'checkbox', name: 'web_search_enabled', checked: values().web_search_enabled}), h('span', {}, t('settings.field.web_search_enabled'))),
+    h('label', {class: 'checkbox'}, h('input', {type: 'checkbox', name: 'ai_label', checked: values().ai_label}), h('span', {}, t('settings.field.ai_label'))),
+  ], data => report(rolesStatus, () => save({
+    analysis_provider: String(data.get('analysis_provider')),
+    analysis_model: String(data.get('analysis_model') || '').trim(),
+    web_search_provider: String(data.get('web_search_provider')),
+    web_search_model: String(data.get('web_search_model') || '').trim(),
+    web_search_enabled: data.get('web_search_enabled') === 'on',
+    ai_label: data.get('ai_label') === 'on',
+  })), t('settings.saveRoles'));
+  addTab('providers', h('div', {class: 'form-stack'}, section(t('settings.rolesTitle'), h('div', {class: 'form-stack'}, roles, rolesStatus)), h('div', {class: 'grid-2'}, ...providerCards), prices));
 
   const comfyStatus = statusLine();
   const comfyRows = h('div', {class: 'form-stack'});

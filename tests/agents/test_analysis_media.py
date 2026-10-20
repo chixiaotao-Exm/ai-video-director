@@ -145,12 +145,13 @@ def test_transcribe_uses_fake_sdk_and_model_selection(monkeypatch: pytest.Monkey
             ), None
 
     monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisper))
+    monkeypatch.setattr(steps, "_read_pcm16", lambda path: f"samples:{path.name}")
     assert steps.transcribe("audio.wav", "tiny") == [
         Segment(start_s=0, end_s=1.2, text="Hello"),
         Segment(start_s=1.3, end_s=3, text="world"),
     ]
     assert calls[0] == ("tiny", {"device": "cpu", "compute_type": "int8"})
-    assert calls[1][0] == "audio.wav"
+    assert calls[1][0] == "samples:audio.wav"
 
 
 @pytest.mark.parametrize(

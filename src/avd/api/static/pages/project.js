@@ -1,8 +1,9 @@
 import {api, tool, upload, mediaURL} from "../api.js";
 import {h, button, form, dialog, notice, media, badge, money, date} from "../components.js";
 import {t} from "../i18n/zh.js";
+import {liveMindMap} from "../mindmap.js";
 
-const TABS = ["overview", "chat", "storyboard", "shots", "final", "analysis"];
+const TABS = ["chat", "mindmap", "overview", "storyboard", "shots", "final", "analysis"];
 const SHOT_KINDS = ["shot_frame", "shot_video", "voiceover", "lipsync", "subtitles"];
 const GENERATORS = ["generate_videos", "generate_voiceover", "run_lipsync", "build_subtitles", "render_final"];
 const p = key => t(`project.${key}`);
@@ -16,6 +17,12 @@ const nodeOf = (project, kind, index = null) => project.nodes.find(node => node.
 const approved = (project, stage) => Boolean(project.reviews?.[stage]?.approved);
 const isReady = nodes => nodes.length > 0 && nodes.every(node => node.status === "clean" && node.current_version_id);
 const currency = value => money(value ?? 0);
+export const tokens = value => {
+  const number = Number(value || 0);
+  if (number >= 1e6) return `${(number / 1e6).toFixed(number >= 1e7 ? 0 : 1)}M`;
+  if (number >= 1e3) return `${(number / 1e3).toFixed(number >= 1e4 ? 0 : 1)}K`;
+  return String(number);
+};
 const serialize = value => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 
 function output(node, kind) {
@@ -57,22 +64,6 @@ function approvalButton(ctx, project, stage, ready) {
   const previous = {script: "structure", frames: "script", final: "frames"}[stage];
   const allowed = !previous || approved(project, previous);
   return button(done ? p("alreadyApproved") : p(`approve.${stage}.button`), () => approvalDialog(ctx, project, stage), {disabled: done || !ready || !allowed, small: true});
-}
-
-function budgetDialog(ctx, project, budget) {
-  let modal;
-  const content = form([
-    paragraph(p("budgetApprovalHelp")),
-    label(p("budgetAmount"), h("input", {type: "number", name: "amount", min: "0", step: "0.01", required: true, value: String(Math.max(0, Number(budget.reserved || budget.confirm_threshold || 1)))})),
-    label(p("approver"), h("input", {name: "actor", required: true, maxLength: 255, autoComplete: "name"})),
-    checkField("reviewed", p("budgetCheckbox")),
-  ], async data => {
-    await api(path(project.id, "/approve-budget"), {method: "POST", body: {amount: Number(data.get("amount")), approved_by: String(data.get("actor")).trim()}});
-    modal.close();
-    notice(p("budgetApproved"));
-    await ctx.reload();
-  }, p("confirmBudget"));
-  modal = dialog(p("budgetApproval"), content);
 }
 
 async function runTool(ctx, project, name, args = {}) {
@@ -140,7 +131,7 @@ function step(number, title, description, state, ...content) {
   );
 }
 
-async function overview(ctx, project, budget, jobs) {
+async function overview(ctx, project, usage, jobs) {
   const [characters, voices] = await Promise.all([api("/characters"), api("/voices")]);
   const analysis = project.nodes.filter(node => node.kind === "analysis");
   const scripts = project.nodes.filter(node => node.kind === "script");
@@ -219,12 +210,10 @@ async function overview(ctx, project, budget, jobs) {
   );
   return h("div", {class: "project-overview-grid"}, panel(p("workflow"), steps),
     h("aside", {class: "stack"},
-      panel(p("projectBudget"), h("dl", {class: "stat-list"},
-        h("div", {}, h("dt", {}, p("budgetLimit")), h("dd", {}, budget.budget_limit == null ? p("unlimited") : currency(budget.budget_limit))),
-        h("div", {}, h("dt", {}, p("spent")), h("dd", {}, currency(budget.spent))),
-        h("div", {}, h("dt", {}, p("reserved")), h("dd", {}, currency(budget.reserved))),
-        h("div", {}, h("dt", {}, p("remaining")), h("dd", {}, budget.remaining == null ? p("unlimited") : currency(budget.remaining))),
-      ), button(p("budgetApproval"), () => budgetDialog(ctx, project, budget)), anchor(p("editBudget"), "#/costs")),
+      panel(p("tokenUsage"), h("dl", {class: "stat-list"},
+        h("div", {}, h("dt", {}, p("inputTokens")), h("dd", {}, tokens(usage.input_tokens))),
+        h("div", {}, h("dt", {}, p("outputTokens")), h("dd", {}, tokens(usage.output_tokens))),
+      ), anchor(p("tokenDetails"), "#/costs")),
       panel(p("recentJobs"), liveJobs(project.id, jobs), anchor(p("allJobs"), "#/jobs")),
     ),
   );
@@ -371,62 +360,168 @@ function analysis(ctx, project) {
   );
 }
 
+function escapeHTML(text) {
+  return text.replace(/[&<>"']/g, char => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
+}
+
+// Small, escape-first Markdown subset for director replies (headings, lists, bold, code, links).
+function markdown(text) {
+  const inline = line => escapeHTML(line)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/(^|[\s(（])(https?:\/\/[^\s<)）]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+  const html = [];
+  let list = null;
+  const close = () => { if (list) { html.push(`</${list}>`); list = null; } };
+  for (const raw of String(text).split("\n")) {
+    const line = raw.trimEnd();
+    let match;
+    if ((match = line.match(/^(#{1,4})\s+(.*)$/))) {
+      close();
+      const level = Math.min(match[1].length + 2, 6);
+      html.push(`<h${level}>${inline(match[2])}</h${level}>`);
+    } else if ((match = line.match(/^\s*[-*•]\s+(.*)$/))) {
+      if (list !== "ul") { close(); html.push("<ul>"); list = "ul"; }
+      html.push(`<li>${inline(match[1])}</li>`);
+    } else if ((match = line.match(/^\s*\d+[.)、]\s*(.*)$/))) {
+      if (list !== "ol") { close(); html.push("<ol>"); list = "ol"; }
+      html.push(`<li>${inline(match[1])}</li>`);
+    } else if (/^\s*(---|\*\*\*)\s*$/.test(line)) {
+      close(); html.push("<hr>");
+    } else if (!line.trim()) {
+      close();
+    } else {
+      close(); html.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  close();
+  const element = h("div", {class: "message-content markdown"});
+  element.innerHTML = html.join("");
+  return element;
+}
+
+const toolLabel = name => {
+  const label = p(`kind.${name}`);
+  return label.startsWith("project.") ? name : label;
+};
+
 function chatMessages(messages) {
   if (!messages.length) return h("div", {class: "chat-empty"}, h("h2", {}, p("chatWelcome")), paragraph(p("chatWelcomeHelp")));
   return h("div", {class: "chat-messages"}, ...messages.map(message => {
     if (message.role === "tool") {
-      return h("details", {class: "tool-call"}, h("summary", {}, `${p("toolResult")} · ${p(`kind.${message.name}`)}`), h("pre", {}, serialize(message.content)));
+      return h("details", {class: "tool-call"}, h("summary", {}, `${p("toolResult")} · ${toolLabel(message.name)}`), h("pre", {}, serialize(message.content)));
     }
+    if (message.role === "user" && message.event) {
+      return h("div", {class: "chat-event"}, String(message.content).replace(/^\[[^\]]*\]\s*/, "").split("。")[0]);
+    }
+    const calls = (message.tool_calls || []).map(call => h("details", {class: "tool-call"}, h("summary", {}, `${p("toolCall")} · ${toolLabel(call.name)}`), h("pre", {}, serialize(call.arguments))));
+    if (message.role === "assistant" && !message.content && calls.length) return h("div", {class: "tool-calls"}, ...calls);
     return h("article", {class: `chat-message chat-message-${message.role}`},
       h("div", {class: "message-role"}, message.role === "user" ? p("you") : p("director")),
-      message.content && h("div", {class: "message-content"}, serialize(message.content)),
-      ...(message.tool_calls || []).map(call => h("details", {class: "tool-call"}, h("summary", {}, `${p("toolCall")} · ${p(`kind.${call.name}`)}`), h("pre", {}, serialize(call.arguments)))),
+      message.content && (message.role === "assistant" ? markdown(message.content) : h("div", {class: "message-content"}, serialize(message.content))),
+      ...calls,
     );
   }));
 }
 
-async function chat(ctx, project, initialJobs) {
-  const history = await api(path(project.id, "/chat"));
+function activity(jobs) {
+  const active = jobs.filter(job => ["queued", "running"].includes(job.status));
+  const kinds = new Set(active.map(job => job.job_type));
+  const key = kinds.has("analyze_video") ? "watching"
+    : kinds.has("director_report") ? "reporting"
+    : kinds.has("write_script") ? "writing"
+    : active.length ? "working" : "";
+  return key ? h("div", {class: "chat-activity", role: "status"}, h("span", {class: "pulse", "aria-hidden": "true"}), p(`activity.${key}`)) : null;
+}
+
+export async function chatPanel(ctx, projectId, {compact = false} = {}) {
+  const [history, initialJobs] = await Promise.all([
+    api(path(projectId, "/chat"), {signal: ctx.signal}),
+    api(path(projectId, "/jobs"), {signal: ctx.signal}),
+  ]);
   const log = h("div", {class: "chat-log", role: "log", "aria-live": "polite", "aria-label": p("chatHistory")}, chatMessages(history));
-  const jobs = liveJobs(project.id, initialJobs);
-  const composer = form([
-    label(p("message"), h("textarea", {name: "message", rows: 3, required: true, placeholder: p("messagePlaceholder")})),
-    paragraph(p("chatPaidHint")),
-  ], async (data, formElement) => {
-    const result = await api(path(project.id, "/chat"), {method: "POST", body: {message: String(data.get("message")).trim()}});
-    formElement.reset();
-    signature = JSON.stringify(result.history);
-    log.replaceChildren(chatMessages(result.history));
-    log.scrollTop = log.scrollHeight;
-    jobs.replaceChildren(jobRows(await api(path(project.id, "/jobs"))));
-  }, p("send"));
+  const status = h("div", {class: "chat-status"}, activity(initialJobs));
+  const textarea = h("textarea", {name: "message", rows: compact ? 2 : 3, required: true, placeholder: p("messagePlaceholder"), "aria-label": p("message")});
+  const send = button(p("send"), null, {primary: true, type: "submit"});
+  const composer = h("form", {class: "chat-composer"}, textarea, h("div", {class: "chat-composer-actions"}, h("small", {class: "muted"}, p("enterHint")), send));
   let signature = JSON.stringify(history);
-  ctx.poll(async () => {
-    const [messages, latestJobs] = await Promise.all([api(path(project.id, "/chat")), api(path(project.id, "/jobs"))]);
-    if (ctx.signal?.aborted) return;
-    const next = JSON.stringify(messages);
-    if (next !== signature) {
-      const nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-      signature = next;
-      log.replaceChildren(chatMessages(messages));
-      if (nearEnd) log.scrollTop = log.scrollHeight;
+  let sending = false;
+  const scrollEnd = () => { log.scrollTop = log.scrollHeight; };
+  const show = messages => {
+    signature = JSON.stringify(messages);
+    log.replaceChildren(chatMessages(messages));
+  };
+  composer.addEventListener("submit", async event => {
+    event.preventDefault();
+    const text = textarea.value.trim();
+    if (!text || sending) return;
+    sending = true; send.disabled = true; textarea.disabled = true;
+    const pending = JSON.parse(signature);
+    pending.push({role: "user", content: text});
+    log.replaceChildren(chatMessages(pending));
+    log.append(h("div", {class: "chat-thinking"}, h("span", {class: "pulse", "aria-hidden": "true"}), p("thinking")));
+    scrollEnd();
+    try {
+      const result = await api(path(projectId, "/chat"), {method: "POST", body: {message: text}});
+      textarea.value = "";
+      show(result.history);
+    } catch (error) {
+      notice(error.message, true);
+      show(await api(path(projectId, "/chat")));
+      textarea.value = text;
+    } finally {
+      sending = false; send.disabled = false; textarea.disabled = false; textarea.focus();
+      scrollEnd();
     }
-    jobs.replaceChildren(jobRows(latestJobs));
-  }, 3000);
-  return h("div", {class: "project-chat-grid"}, h("section", {class: "card panel chat-panel stack"}, log, composer), h("aside", {class: "stack"}, panel(p("recentJobs"), jobs, anchor(p("allJobs"), "#/jobs")), panel(p("chatCheckpoints"), paragraph(p("chatCheckpointsHelp")), anchor(p("returnOverview"), route(project.id, "overview")))));
+  });
+  textarea.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      composer.requestSubmit();
+    }
+  });
+  ctx.poll(async () => {
+    if (sending) return;
+    const [messages, jobs] = await Promise.all([api(path(projectId, "/chat")), api(path(projectId, "/jobs"))]);
+    if (ctx.signal?.aborted || sending) return;
+    status.replaceChildren(activity(jobs) || "");
+    if (JSON.stringify(messages) !== signature) {
+      const nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+      show(messages);
+      if (nearEnd) scrollEnd();
+    }
+  }, 2500);
+  requestAnimationFrame(scrollEnd);
+  return h("section", {class: `card panel chat-panel stack${compact ? " compact" : ""}`}, log, status, composer);
+}
+
+async function chat(ctx, project, initialJobs) {
+  const panelElement = await chatPanel(ctx, project.id);
+  const jobs = liveJobs(project.id, initialJobs);
+  ctx.poll(async () => { jobs.replaceChildren(jobRows(await api(path(project.id, "/jobs")))); }, 4000);
+  const source = project.source_video_path;
+  return h("div", {class: "project-chat-grid"}, panelElement,
+    h("aside", {class: "stack"},
+      panel(p("tabs.mindmap"), liveMindMap(ctx, project.id, {compact: true}), anchor(p("mindmapFull"), route(project.id, "mindmap"))),
+      source
+        ? panel(p("referenceVideo"), media(source, "video", {preload: "metadata", class: "media media-video reference-player"}))
+        : panel(p("referenceVideo"), paragraph(p("noSourceYet")), anchor(p("uploadSource"), route(project.id, "overview"))),
+      panel(p("recentJobs"), jobs, anchor(p("allJobs"), "#/jobs")),
+    ));
 }
 
 export async function render(ctx) {
   const id = ctx.params?.[0] || ctx.projectId;
   if (!id) return panel(p("selectProject"), paragraph(p("selectProjectHelp")), anchor(p("dashboard"), "#/dashboard"));
-  const current = TABS.includes(ctx.params?.[1]) ? ctx.params[1] : "overview";
-  const [project, budget, jobs] = await Promise.all([
-    api(path(id, "/status")), tool(id, "get_budget"), api(path(id, "/jobs")),
-  ]);
+  const current = TABS.includes(ctx.params?.[1]) ? ctx.params[1] : "chat";
+  const [project, jobs] = await Promise.all([api(path(id, "/status")), api(path(id, "/jobs"))]);
+  const usage = ctx.projects?.find(item => item.id === id) || {};
   const tabs = h("nav", {class: "project-tabs", "aria-label": p("tabsLabel")}, ...TABS.map(tab => anchor(p(`tabs.${tab}`), route(id, tab), {class: current === tab ? "active" : "", "aria-current": current === tab ? "page" : null})));
   const header = h("header", {class: "page-heading row spread wrap"}, h("div", {class: "stack compact"}, h("p", {class: "eyebrow"}, p("projectWorkspace")), h("h1", {}, project.title)), button(p("refresh"), () => ctx.reload(), {small: true}));
-  const renderers = {overview, chat, storyboard, shots, final: finalPage, analysis};
-  const content = current === "overview" ? await overview(ctx, project, budget, jobs) : current === "chat" ? await chat(ctx, project, jobs) : await renderers[current](ctx, project);
+  const mindmapTab = () => h("section", {class: "card panel stack"}, h("h2", {}, p("tabs.mindmap")), h("p", {class: "muted"}, p("mindmapHelp")), liveMindMap(ctx, id));
+  const renderers = {overview, chat, storyboard, shots, final: finalPage, analysis, mindmap: mindmapTab};
+  const content = current === "overview" ? await overview(ctx, project, usage, jobs) : current === "chat" ? await chat(ctx, project, jobs) : await renderers[current](ctx, project);
   attachJobEvents(ctx, id, jobs);
   const view = h("div", {class: "stack project-page"}, header, tabs, content);
   let edited = false;
@@ -434,7 +529,7 @@ export async function render(ctx) {
   view.addEventListener("input", () => { edited = true; });
   view.addEventListener("change", () => { edited = true; });
   if (current === "overview") ctx.poll(() => refreshLiveJobs(ctx, id), 4000);
-  if (current !== "chat" && current !== "storyboard") {
+  if (!["chat", "storyboard", "mindmap"].includes(current)) {
     const signature = JSON.stringify([project.nodes.map(node => [node.id, node.status, node.current_version_id]), project.reviews]);
     ctx.poll(async () => {
       const next = await api(path(id, "/status"));

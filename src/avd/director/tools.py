@@ -21,6 +21,7 @@ from avd.state.consent import require_usable
 from avd.state.models import Node, NodeKind, Project
 from avd.state.repo import ProjectRepo
 
+from . import mindmap
 from .review import (
     ReviewRequired,
     approve,
@@ -101,6 +102,11 @@ class WebSearchInput(ToolInput):
     query: str = Field(min_length=2, max_length=2000)
 
 
+class MindMapInput(ToolInput):
+    nodes: list[mindmap.MindMapItem] = Field(default_factory=list, max_length=40)
+    remove: list[str] = Field(default_factory=list, max_length=40)
+
+
 class ApproveInput(ToolInput):
     stage: Literal["structure", "script", "frames", "final"]
     user_quote: str = Field(
@@ -141,6 +147,13 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
         WebSearchInput,
         "Search the web for current information (trends, references, techniques, model or "
         "tool docs). Returns an answer with source URLs. Use it whenever fresh facts help.",
+    ),
+    "update_mindmap": (
+        MindMapInput,
+        "Add or update nodes in the live mind map the user watches: insights, options, "
+        "decisions, open questions and tasks, each linked to the node it follows from "
+        "(parent: root, reference, script, shot-N or your own ids). Reuse ids to update "
+        "status (open/chosen/rejected/done). Keep labels short; put detail in note.",
     ),
     "approve_checkpoint": (
         ApproveInput,
@@ -257,6 +270,12 @@ class DirectorTools:
                 finally:
                     session.commit()
             return found.content or "No results."
+        if isinstance(parsed, MindMapInput):
+            with self.runtime.session_factory() as session:
+                project = self._project(session)
+                changed = mindmap.update(session, project, parsed.nodes, parsed.remove)
+                session.commit()
+            return _summary(changed)
         if isinstance(parsed, ApproveInput):
             quote = " ".join(parsed.user_quote.split())
             latest = " ".join((self.latest_user_message or "").split())
