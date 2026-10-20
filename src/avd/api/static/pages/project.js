@@ -17,7 +17,7 @@ const nodeOf = (project, kind, index = null) => project.nodes.find(node => node.
 const approved = (project, stage) => Boolean(project.reviews?.[stage]?.approved);
 const isReady = nodes => nodes.length > 0 && nodes.every(node => node.status === "clean" && node.current_version_id);
 const currency = value => money(value ?? 0);
-import {mtokens as tokens} from "../components.js";
+import {mtokens as tokens, deleteProject} from "../components.js";
 export {tokens};
 const serialize = value => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 
@@ -549,7 +549,9 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
     event.preventDefault();
     const text = textarea.value.trim();
     if ((!text && !files.length) || sending) return;
-    sending = true; send.disabled = true; textarea.disabled = true; attach.disabled = true;
+    // Like a messenger: the box clears at once and you can keep typing while it sends.
+    sending = true; send.disabled = true; attach.disabled = true;
+    textarea.value = "";
     const outgoing = files;
     files = []; renderChips();
     const pending = JSON.parse(signature);
@@ -562,15 +564,14 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
       const attachments = [];
       for (const file of outgoing) attachments.push(await upload(file));
       const result = await api(path(projectId, "/chat"), {method: "POST", body: {message: text, attachments}});
-      textarea.value = "";
       show(result.history);
     } catch (error) {
       notice(error.message, true);
       show(await api(path(projectId, "/chat")));
-      textarea.value = text;
+      if (!textarea.value.trim()) textarea.value = text;
       files = outgoing; renderChips();
     } finally {
-      sending = false; send.disabled = false; textarea.disabled = false; attach.disabled = false; textarea.focus();
+      sending = false; send.disabled = false; attach.disabled = false; textarea.focus();
       scrollEnd();
     }
   });
@@ -618,7 +619,7 @@ export async function render(ctx) {
   const [project, jobs] = await Promise.all([api(path(id, "/status")), api(path(id, "/jobs"))]);
   const usage = ctx.projects?.find(item => item.id === id) || {};
   const tabs = h("nav", {class: "project-tabs", "aria-label": p("tabsLabel")}, ...TABS.map(tab => anchor(p(`tabs.${tab}`), route(id, tab), {class: current === tab ? "active" : "", "aria-current": current === tab ? "page" : null})));
-  const header = h("header", {class: "page-heading row spread wrap"}, h("div", {class: "stack compact"}, h("p", {class: "eyebrow"}, project.mode === "anime_sequel" ? t("anime.eyebrow") : p("projectWorkspace")), h("h1", {}, project.title)), button(p("refresh"), () => ctx.reload(), {small: true}));
+  const header = h("header", {class: "page-heading row spread wrap"}, h("div", {class: "stack compact"}, h("p", {class: "eyebrow"}, project.mode === "anime_sequel" ? t("anime.eyebrow") : p("projectWorkspace")), h("h1", {}, project.title)), h("div", {class: "toolbar"}, button(p("refresh"), () => ctx.reload(), {small: true}), button(p("deleteProject"), async () => { if (await deleteProject(project)) location.hash = "#/"; }, {small: true, danger: true})));
   const mindmapTab = () => h("section", {class: "card panel stack"}, h("h2", {}, p("tabs.mindmap")), h("p", {class: "muted"}, p("mindmapHelp")), liveMindMap(ctx, id));
   const renderers = {overview, chat, storyboard, shots, final: finalPage, analysis, mindmap: mindmapTab};
   const content = current === "overview" ? await overview(ctx, project, usage, jobs) : current === "chat" ? await chat(ctx, project, jobs) : await renderers[current](ctx, project);

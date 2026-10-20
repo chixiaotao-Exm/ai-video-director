@@ -520,6 +520,19 @@ def create_app(
             session.commit()
             return _project_data(project)
 
+    @application.delete("/projects/{project_id}", status_code=204)
+    def delete_project_route(project_id: str) -> None:
+        from avd.state.deletion import ProjectBusy, delete_project
+
+        with current_runtime().session_factory() as session:
+            try:
+                delete_project(session, media_root(), project_id)
+            except KeyError:
+                raise HTTPException(404, "Project not found") from None
+            except ProjectBusy as exc:
+                raise HTTPException(409, str(exc)) from None
+            session.commit()
+
     @application.get("/projects")
     def list_projects() -> list[dict[str, Any]]:
         from avd.llm.ledger import CostEntry

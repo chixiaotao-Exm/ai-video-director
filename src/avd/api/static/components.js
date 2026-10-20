@@ -84,6 +84,20 @@ export function mtokens(value) {
   const digits = number >= 1e6 ? 2 : number >= 1e4 ? 3 : 4;
   return `${(number / 1e6).toFixed(digits)}M`;
 }
+// Deletes a project after confirmation; resolves true when it was deleted.
+export async function deleteProject(project) {
+  if (!confirm(t('project.deleteConfirm', {title: project.title}))) return false;
+  const response = await fetch(`/projects/${encodeURIComponent(project.id)}`, {method: 'DELETE', credentials: 'same-origin'});
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json()).detail || ''; } catch { /* empty body */ }
+    notice(`${t('project.deleteFailed')} ${detail}`, true);
+    return false;
+  }
+  try { if (localStorage.getItem('avd.project') === project.id) localStorage.removeItem('avd.project'); } catch { /* optional */ }
+  notice(t('project.deleted'));
+  return true;
+}
 export function money(value) { return value == null ? t('common.unlimited') : new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 4}).format(value); }
 export function date(value) { return value ? new Date(value.endsWith?.('Z') || /[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'}) : '—'; }
 export function formatDuration(value) { return value == null ? '—' : t('common.seconds', {n: Math.round(value * 10) / 10}); }

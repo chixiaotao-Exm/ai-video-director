@@ -1,5 +1,5 @@
 import {api, upload} from './api.js';
-import {h, button, select, badge, notice, icon, empty, form, field, input, dialog, pageHeader, media, link} from './components.js';
+import {h, button, select, badge, notice, icon, empty, form, field, input, dialog, pageHeader, media, link, deleteProject} from './components.js';
 import {t} from './i18n/zh.js';
 import {render as projectPage, chatPanel, tokens} from './pages/project.js';
 import {render as assetsPage} from './pages/assets.js';
@@ -90,7 +90,7 @@ async function dashboard(ctx, mode = 'remake') {
     h('a',{href:`#/projects/${project.id}/chat`,'aria-label':project.title},project.thumbnail_path ? media(project.thumbnail_path,project.thumbnail_kind,{...(project.thumbnail_kind==='video'?{controls:false,muted:true}:{}),alt:project.title}) : h('div',{class:'media-empty'},icon('film',32),t('dashboard.noThumbnail'))),
     h('div',{class:'row spread'},h('h3',{},link(project.title,`#/projects/${project.id}/chat`)),badge(project.status)),
     h('div',{class:'project-card-meta'},h('span',{},t('dashboard.tokenLine',{input:tokens(project.input_tokens),output:tokens(project.output_tokens)}))),
-    h('a',{class:'row spread',href:`#/projects/${project.id}/chat`},t('dashboard.open'),icon('arrow',16))
+    h('div',{class:'row spread'},h('a',{class:'row',href:`#/projects/${project.id}/chat`},t('dashboard.open'),icon('arrow',16)),button(t('project.deleteProject'),async()=>{if(await deleteProject(project))await renderPage();},{small:true,danger:true}))
   ));
   root.append(h('section',{class:'stack'},h('div',{class:'section-heading'},h('h2',{},t('dashboard.recent')),h('small',{class:'muted'},t('dashboard.projectCount',{n:projects.length}))),cards.length?h('div',{class:'project-grid'},cards):empty(t(anime?'anime.empty':'dashboard.empty'),t('dashboard.emptyHelp'),button(t(anime?'anime.new':'dashboard.new'),()=>newProject(ctx,mode),{primary:true}))));
   const workerValue = data.system.workers?.workers || [];
