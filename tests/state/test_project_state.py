@@ -212,6 +212,11 @@ def test_cycle_detection(repo):
         repo.plan_rebuild(project)
 
 
+def test_create_project_cannot_bypass_asset_consent(repo):
+    with pytest.raises(TypeError):
+        repo.create_project("bypass", character_id="character-id", voice_id="voice-id")
+
+
 def test_version_numbers_are_unique_per_node(repo):
     project = repo.create_project("unique")
     node = repo.add_node(project, NodeKind.SCRIPT)

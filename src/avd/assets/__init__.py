@@ -1,6 +1,8 @@
 """Character and voice asset library."""
 
-from .library import AssetLibrary, ConsentRequiredError, require_usable
+from avd.state.consent import ConsentRequiredError, require_usable
+
+from .library import AssetLibrary
 from .storage import AssetStorage, UnsupportedAssetError
 
 __all__ = [

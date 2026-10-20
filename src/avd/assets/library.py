@@ -4,38 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import TypeAlias
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from avd.state.consent import Asset, ConsentRequiredError, require_usable
 from avd.state.models import Character, Voice
 
 from .storage import AssetStorage
 
 
-class ConsentRequiredError(PermissionError):
-    """Raised when an asset is used before its owner's consent is confirmed."""
-
-
-Asset: TypeAlias = Character | Voice
-
-
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def require_usable(asset: Asset) -> Asset:
-    """Return an asset only when its consent gate has been confirmed."""
-
-    if not isinstance(asset, (Character, Voice)):
-        raise TypeError("asset must be a Character or Voice")
-    if not asset.consent_confirmed:
-        kind = "character" if isinstance(asset, Character) else "voice"
-        raise ConsentRequiredError(
-            f"Consent is required before using {kind} asset {asset.id}"
-        )
-    return asset
 
 
 class AssetLibrary:
@@ -90,6 +70,8 @@ class AssetLibrary:
         default_params: Mapping[str, object] | None = None,
     ) -> Voice:
         samples = list(sample_paths)
+        if not samples:
+            raise ValueError("At least one voice sample is required")
         for path in samples:
             self.storage.validate_source(path, "voices")
 

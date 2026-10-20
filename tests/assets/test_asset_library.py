@@ -73,6 +73,11 @@ def test_library_stores_only_relative_media_paths(library, tmp_path):
     assert voice.sample_audio_paths[0].startswith("assets/voices/")
 
 
+def test_voice_requires_at_least_one_sample(library):
+    with pytest.raises(ValueError, match="sample"):
+        library.create_voice("No sample", [], "tts")
+
+
 def test_character_front_view_is_required_and_views_are_limited(library, tmp_path):
     image = write_file(tmp_path / "ref.webp", b"image")
 

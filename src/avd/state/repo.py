@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .consent import require_usable
 from .models import Character, Node, NodeKind, NodeStatus, Project, Version, Voice
 
 
@@ -63,8 +64,6 @@ class ProjectRepo:
         title: str,
         source_video_path: str | None = None,
         analysis_result: Mapping[str, Any] | None = None,
-        character_id: str | None = None,
-        voice_id: str | None = None,
         budget_limit: float = 0.0,
     ) -> Project:
         """Create and flush a project."""
@@ -77,8 +76,6 @@ class ProjectRepo:
                 if analysis_result is not None
                 else None
             ),
-            character_id=character_id,
-            voice_id=voice_id,
             budget_limit=budget_limit,
         )
         self.session.add(project)
@@ -92,8 +89,6 @@ class ProjectRepo:
         voice: Voice,
     ) -> Project:
         """Attach consented character and voice assets to a project."""
-
-        from avd.assets.library import require_usable
 
         require_usable(character)
         require_usable(voice)
