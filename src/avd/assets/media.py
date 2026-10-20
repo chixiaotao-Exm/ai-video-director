@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,8 +92,12 @@ def separate(
     *,
     name: str,
     project_id: str | None = None,
+    stems: bool = False,
 ) -> list[MediaAsset]:
-    """Split a video into a silent video track and an audio track, both saved as assets."""
+    """Split a video into a silent video track and an audio track, both saved as assets.
+
+    With ``stems``, the audio is further split into vocals and accompaniment (Demucs).
+    """
     root = data_dir.expanduser().resolve()
     source = (root / source_relative).resolve()
     if not source.is_relative_to(root) or not source.is_file():
@@ -155,13 +161,77 @@ def separate(
                 duration_s=duration,
             )
         )
+        if stems:
+            for stem, label in split_vocals(
+                folder / "audio.wav" if audio_out.suffix == ".wav" else audio_out, folder
+            ):
+                created.append(
+                    MediaAsset(
+                        name=f"{name} · {label}",
+                        kind="audio",
+                        path=stem.relative_to(root).as_posix(),
+                        source=source_relative,
+                        project_id=project_id,
+                        duration_s=duration,
+                    )
+                )
     session.add_all(created)
     session.flush()
     return created
+
+
+def split_vocals(audio: Path, folder: Path) -> list[tuple[Path, str]]:
+    """Separate vocals from accompaniment with Demucs (htdemucs, runs on CPU or GPU)."""
+    if importlib.util.find_spec("demucs") is None:
+        raise MediaError("Vocal separation needs Demucs: pip install demucs")
+    work = folder / "stems"
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "demucs",
+            "--two-stems=vocals",
+            "-n",
+            "htdemucs",
+            "-o",
+            str(work),
+            str(audio),
+        ]
+    )
+    produced = work / "htdemucs" / audio.stem
+    results: list[tuple[Path, str]] = []
+    for filename, label in (("vocals.wav", "人声"), ("no_vocals.wav", "伴奏")):
+        stem = produced / filename
+        if not stem.is_file():
+            raise MediaError(f"Demucs did not produce {filename}")
+        final = folder / filename
+        stem.replace(final)
+        results.append((final, label))
+    return results
+
+
+def delete_asset(session: Session, data_dir: Path, asset_id: str) -> None:
+    asset = session.get(MediaAsset, asset_id)
+    if asset is None:
+        raise KeyError("Media asset not found")
+    root = data_dir.expanduser().resolve()
+    path = (root / asset.path).resolve()
+    if path.is_relative_to(root / "assets" / "media"):
+        path.unlink(missing_ok=True)
+    session.delete(asset)
+    session.flush()
 
 
 def list_assets(session: Session) -> list[MediaAsset]:
     return list(session.scalars(select(MediaAsset).order_by(MediaAsset.created_at.desc())))
 
 
-__all__ = ["MediaAsset", "MediaError", "asset_data", "list_assets", "separate"]
+__all__ = [
+    "MediaAsset",
+    "MediaError",
+    "asset_data",
+    "delete_asset",
+    "list_assets",
+    "separate",
+    "split_vocals",
+]

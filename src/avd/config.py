@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     analysis_provider: Literal["openai", "anthropic", "gemini"] = "openai"
     analysis_model: str = "gpt-6-astra"
     gemini_model: str | None = "gemini-2.5-pro"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_model: str = "deepseek-v4-pro"
     anthropic_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None

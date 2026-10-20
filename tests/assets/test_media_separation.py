@@ -71,3 +71,13 @@ def test_rejects_paths_outside_data_dir(tmp_path: Path, session: Session) -> Non
     with pytest.raises(MediaError):
         separate(session, tmp_path, "not-video.mp4", name="x")
     assert session.query(MediaAsset).count() == 0
+
+
+def test_stems_require_demucs(
+    tmp_path: Path, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from avd.assets import media
+
+    monkeypatch.setattr(media.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(MediaError, match="Demucs"):
+        media.split_vocals(tmp_path / "audio.wav", tmp_path)

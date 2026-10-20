@@ -64,6 +64,7 @@ class ProjectInput(InputModel):
 
 
 class SeparateInput(InputModel):
+    stems: bool = False
     project_id: str | None = None
     path: str | None = Field(default=None, max_length=1024)
     name: str | None = Field(default=None, max_length=200)
@@ -619,6 +620,17 @@ def create_app(
         with current_runtime().session_factory() as session:
             return [asset_data(asset) for asset in list_assets(session)]
 
+    @application.delete("/media-assets/{asset_id}", status_code=204)
+    def delete_media_asset(asset_id: str) -> None:
+        from avd.assets.media import delete_asset
+
+        with current_runtime().session_factory() as session:
+            try:
+                delete_asset(session, media_root(), asset_id)
+            except KeyError:
+                raise HTTPException(404, "Media asset not found") from None
+            session.commit()
+
     @application.post("/media-assets/separate", status_code=201)
     def separate_media(body: SeparateInput) -> list[dict[str, Any]]:
         from avd.assets.media import MediaError, asset_data, separate
@@ -638,6 +650,7 @@ def create_app(
                     source.relative_to(root).as_posix(),
                     name=name,
                     project_id=project.id if project else None,
+                    stems=body.stems,
                 )
             except MediaError as exc:
                 raise HTTPException(422, str(exc)) from None

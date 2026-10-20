@@ -216,18 +216,27 @@ function separateDialog(ctx) {
   const project = (ctx.projects || []).find(item => item.id === ctx.projectId);
   const useReference = Boolean(project?.source_video_path);
   const file = input("file", "", {name: "video", accept: ".mp4,.mov,.webm,.mkv,.avi", required: !useReference});
+  const status = h("p", {class: "chat-activity", role: "status"});
   const content = form([
     h("p", {class: "muted"}, t("media.separateHelp")),
     useReference ? h("p", {}, `${t("media.defaultSource")}「${project.title}」`) : null,
     field(useReference ? t("media.orUpload") : t("media.chooseVideo"), file),
     field(t("media.name"), input("text", "", {name: "name", maxLength: 200, placeholder: t("media.namePlaceholder")})),
+    h("label", {class: "checkbox"}, h("input", {type: "checkbox", name: "stems"}), h("span", {}, t("media.stems"))),
+    status,
   ], async data => {
     const chosen = data.get("video");
-    const body = {name: String(data.get("name") || "").trim() || null};
-    if (chosen instanceof File && chosen.size) body.path = await upload(chosen);
-    else body.project_id = project.id;
-    notice(t("media.working"));
-    await api("/media-assets/separate", {method: "POST", body});
+    const body = {name: String(data.get("name") || "").trim() || null, stems: data.get("stems") === "on"};
+    status.replaceChildren(h("span", {class: "pulse", "aria-hidden": "true"}), t(body.stems ? "media.workingStems" : "media.working"));
+    try {
+      if (chosen instanceof File && chosen.size) body.path = await upload(chosen);
+      else body.project_id = project.id;
+      await api("/media-assets/separate", {method: "POST", body});
+    } catch (error) {
+      status.className = "error-text";
+      status.textContent = error.message;
+      throw error;
+    }
     modal.close();
     notice(t("media.done"));
     await ctx.reload();
@@ -243,6 +252,12 @@ function mediaCard(asset, ctx) {
     h("div", {class: "toolbar"},
       h("a", {class: "button small", href: mediaURL(asset.path), download: ""}, t("media.download")),
       asset.kind === "audio" ? button(t("media.useAsVoice"), () => createVoice(ctx, asset), {small: true}) : null,
+      button(t("media.delete"), async () => {
+        if (!confirm(t("media.deleteConfirm"))) return;
+        await api(`/media-assets/${encodeURIComponent(asset.id)}`, {method: "DELETE"});
+        notice(t("media.deleted"));
+        await ctx.reload();
+      }, {small: true, danger: true}),
     ),
   );
 }

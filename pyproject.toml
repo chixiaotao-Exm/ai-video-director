@@ -30,6 +30,7 @@ llm = [
   "google-genai>=1",
 ]
 analysis = [
+  "demucs>=4",
   "faster-whisper>=1",
   "scenedetect[opencv]>=0.6",
 ]

@@ -103,6 +103,9 @@ class WebSearchInput(ToolInput):
 
 
 class SeparateInput(ToolInput):
+    stems: bool = Field(
+        default=False, description="Also split the audio into vocals and accompaniment."
+    )
     source: str = Field(
         default="reference",
         max_length=1024,
@@ -298,7 +301,12 @@ class DirectorTools:
                         Path(self._uploaded_path(parsed.source)).resolve().relative_to(root)
                     ).as_posix()
                 created = separate(
-                    session, root, relative, name=project.title, project_id=project.id
+                    session,
+                    root,
+                    relative,
+                    name=project.title,
+                    project_id=project.id,
+                    stems=parsed.stems,
                 )
                 session.commit()
                 return _summary(
