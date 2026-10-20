@@ -42,3 +42,6 @@ data/
 build/
 dist/
 *.egg-info/
+
+# Local sample media supplied by the user
+/test/

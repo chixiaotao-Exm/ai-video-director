@@ -47,6 +47,7 @@ def understand(
     router: LLMRouter,
     project: Project | None = None,
     duration_s: float | None = None,
+    mode: str = "remake",
 ) -> StructureTemplate:
     """Describe structure and style from the actual video, using the analysis role.
 
@@ -97,6 +98,16 @@ def understand(
                 "voice identity, distinctive appearance, branding or exact creative content. "
                 "The template will be used to create an original video starring separately "
                 "consented assets. Write every text field in Simplified Chinese."
+                + (
+                    " This is an anime episode the user wants to continue. Also fill "
+                    "story_bible: series premise, this episode's plot, every named "
+                    "character (role, appearance, personality, relationships), world, "
+                    "art style (line work, palette, lighting, camera language), tone, the "
+                    "story so far, unresolved threads and the cliffhanger. These are story "
+                    "facts for continuity; do not copy dialogue verbatim."
+                    if mode == "anime_sequel"
+                    else " Leave story_bible empty."
+                )
             ),
         },
         {
@@ -194,6 +205,7 @@ class AnalysisPipeline:
                 router=self.router,
                 project=project,
                 duration_s=media.duration_s,
+                mode=project.mode,
             )
         else:
             template = self.understand_step(

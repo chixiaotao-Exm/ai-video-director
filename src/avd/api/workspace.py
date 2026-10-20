@@ -330,6 +330,7 @@ def install_workspace_routes(application: FastAPI, current_runtime: Callable[[],
             for project in session.scalars(select(Project).order_by(Project.created_at.desc())):
                 item = _budget_data(session, project)
                 item["input_tokens"], item["output_tokens"] = usage.get(project.id, (0, 0))
+                item["mode"] = project.mode
                 statuses = {node.status for node in project.nodes}
                 item["status"] = next(
                     (

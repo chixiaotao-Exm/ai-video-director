@@ -59,6 +59,7 @@ class InputModel(BaseModel):
 
 class ProjectInput(InputModel):
     title: str = Field(min_length=1, max_length=255)
+    mode: Literal["remake", "anime_sequel"] = "remake"
     budget_limit: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)
 
 
@@ -143,6 +144,7 @@ def _project_data(project: Project) -> dict[str, Any]:
         (
             "id",
             "title",
+            "mode",
             "source_video_path",
             "analysis_result",
             "character_id",
@@ -502,20 +504,34 @@ def create_app(
                 if "budget_limit" in body.model_fields_set
                 else current_runtime().settings.default_budget_limit
             )
-            project = Project(title=body.title, budget_limit=budget)
+            project = Project(title=body.title, mode=body.mode, budget_limit=budget)
             session.add(project)
             session.commit()
             return _project_data(project)
 
     @application.get("/projects")
     def list_projects() -> list[dict[str, Any]]:
+        from avd.llm.ledger import CostEntry
+
         with current_runtime().session_factory() as session:
-            return [
-                _project_data(project)
-                for project in session.scalars(
-                    select(Project).order_by(Project.created_at, Project.id)
+            usage = {
+                project_id: (int(incoming), int(outgoing))
+                for project_id, incoming, outgoing in session.execute(
+                    select(
+                        CostEntry.project_id,
+                        func.coalesce(func.sum(CostEntry.input_tokens), 0),
+                        func.coalesce(func.sum(CostEntry.output_tokens), 0),
+                    ).group_by(CostEntry.project_id)
                 )
-            ]
+            }
+            result = []
+            for project in session.scalars(
+                select(Project).order_by(Project.created_at, Project.id)
+            ):
+                item = _project_data(project)
+                item["input_tokens"], item["output_tokens"] = usage.get(project.id, (0, 0))
+                result.append(item)
+            return result
 
     @application.post("/uploads", status_code=201)
     async def upload_asset(file: UploadFile) -> dict[str, str]:

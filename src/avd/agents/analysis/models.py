@@ -40,6 +40,26 @@ class ShotTemplate(AnalysisModel):
     spoken_line_purpose: str = Field(min_length=1)
 
 
+class StoryCharacter(AnalysisModel):
+    name: str = Field(min_length=1)
+    role: str = ""
+    appearance: str = ""
+    personality: str = ""
+    relationships: str = ""
+
+
+class StoryBible(AnalysisModel):
+    series_premise: str = ""
+    episode_summary: str = ""
+    characters: list[StoryCharacter] = Field(default_factory=list)
+    world: str = ""
+    art_style: str = ""
+    tone: str = ""
+    story_so_far: str = ""
+    open_threads: list[str] = Field(default_factory=list)
+    cliffhanger: str = ""
+
+
 class StructureTemplate(AnalysisModel):
     total_duration_s: float = Field(gt=0)
     summary: str = ""
@@ -49,3 +69,5 @@ class StructureTemplate(AnalysisModel):
     music_style: str = Field(min_length=1)
     voice_style: str = Field(min_length=1)
     why_it_works: str = ""
+    # Anime sequel mode only: characters, world, art style and the story so far.
+    story_bible: StoryBible | None = None

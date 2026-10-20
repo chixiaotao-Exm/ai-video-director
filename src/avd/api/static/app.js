@@ -12,7 +12,7 @@ const state = {projects: [], projectId: '', controller: null, cleanup: [], seria
 try { state.projectId = localStorage.getItem('avd.project') || ''; } catch { /* local storage is optional */ }
 const content = document.querySelector('#content');
 const nav = document.querySelector('#navigation');
-const NAV = [['dashboard','dashboard'],['project','project'],['assets','assets'],['jobs','jobs'],['costs','costs'],['settings','settings'],['system','system']];
+const NAV = [['dashboard','dashboard'],['anime','anime'],['project','project'],['assets','assets'],['jobs','jobs'],['costs','costs'],['settings','settings'],['system','system']];
 
 function navigate(hash) {
   const destination = hash.startsWith('#') ? hash : `#/${hash.replace(/^\//,'')}`;
@@ -45,20 +45,22 @@ function updateTopbar() {
 }
 
 // The usual start: pick a reference video; the director watches it and reports in chat.
-function newProject(ctx) {
+function newProject(ctx, mode = 'remake') {
   let modal;
+  const anime = mode === 'anime_sequel';
   const file = input('file', '', {name: 'source', accept: '.mp4,.mov,.webm,.mkv,.avi', required: true});
   const title = input('text', '', {name: 'title', maxLength: 255, placeholder: t('dashboard.namePlaceholder')});
   file.addEventListener('change', () => {
     if (!title.value && file.files?.[0]) title.value = file.files[0].name.replace(/\.[^.]+$/, '').slice(0, 255);
   });
   const create = form([
-    field(t('dashboard.sourceVideo'), file, t('dashboard.sourceHelp')),
+    h('p', {class: 'muted'}, t(anime ? 'anime.dialogHelp' : 'dashboard.dialogHelp')),
+    field(t(anime ? 'anime.sourceVideo' : 'dashboard.sourceVideo'), file, t('dashboard.sourceHelp')),
     field(t('dashboard.projectName'), title, t('dashboard.nameHelp')),
   ], async data => {
     const source = data.get('source');
     const name = String(data.get('title') || '').trim() || (source?.name || t('dashboard.untitled')).replace(/\.[^.]+$/, '');
-    const result = await api('/projects', {method: 'POST', body: {title: name.slice(0, 255), budget_limit: null}});
+    const result = await api('/projects', {method: 'POST', body: {title: name.slice(0, 255), mode, budget_limit: null}});
     saveProject(result.id);
     notice(t('dashboard.uploading'));
     await upload(source, result.id);
@@ -66,21 +68,22 @@ function newProject(ctx) {
     notice(t('dashboard.analysisStarted'));
     navigate(`#/projects/${result.id}/chat`);
   }, t('dashboard.startAnalysis'));
-  modal = dialog(t('dashboard.new'), create);
+  modal = dialog(t(anime ? 'anime.new' : 'dashboard.new'), create);
 }
 
-async function dashboard(ctx) {
+async function dashboard(ctx, mode = 'remake') {
+  const anime = mode === 'anime_sequel';
   const data = await api('/dashboard',{signal:ctx.signal});
-  const projects = data.projects;
+  const projects = data.projects.filter(project => (project.mode === 'anime_sequel') === anime);
   const totalTokens = projects.reduce((sum, project) => sum + (project.input_tokens || 0) + (project.output_tokens || 0), 0);
   const completed = projects.filter(project => project.status === 'clean' || project.status === 'succeeded').length;
   const pending = projects.filter(project => project.status === 'running').length;
   const stat = (label,value,note) => h('div',{class:'stat'},h('span',{class:'muted'},label),h('strong',{},value),h('small',{class:'muted'},note));
   const root = h('div',{class:'page dashboard-page'},
-    pageHeader(t('dashboard.title'),t('dashboard.subtitle'),button([icon('plus',16),t('dashboard.new')],()=>newProject(ctx),{primary:true})),
+    pageHeader(t(anime?'anime.title':'dashboard.title'),t(anime?'anime.subtitle':'dashboard.subtitle'),button([icon('plus',16),t(anime?'anime.new':'dashboard.new')],()=>newProject(ctx,mode),{primary:true})),
     h('section',{class:'card start-card'},
-      h('div',{class:'stack compact'},h('h2',{},t('dashboard.startTitle')),h('p',{class:'muted'},t('dashboard.startHelp'))),
-      button([icon('film',18),t('dashboard.startButton')],()=>newProject(ctx),{primary:true})),
+      h('div',{class:'stack compact'},h('h2',{},t(anime?'anime.startTitle':'dashboard.startTitle')),h('p',{class:'muted'},t(anime?'anime.startHelp':'dashboard.startHelp'))),
+      button([icon(anime?'anime':'film',18),t('dashboard.startButton')],()=>newProject(ctx,mode),{primary:true})),
     h('div',{class:'stats-grid'},stat(t('dashboard.projects'),projects.length,t('dashboard.savedLocally')),stat(t('dashboard.active'),pending,t('dashboard.queueContinues')),stat(t('dashboard.complete'),completed,t('dashboard.versioned')),stat(t('dashboard.tokens'),tokens(totalTokens),t('dashboard.tokensNote')))
   );
   const cards = projects.map(project => h('article',{class:'card project-card'},
@@ -89,7 +92,7 @@ async function dashboard(ctx) {
     h('div',{class:'project-card-meta'},h('span',{},t('dashboard.tokenLine',{input:tokens(project.input_tokens),output:tokens(project.output_tokens)}))),
     h('a',{class:'row spread',href:`#/projects/${project.id}/chat`},t('dashboard.open'),icon('arrow',16))
   ));
-  root.append(h('section',{class:'stack'},h('div',{class:'section-heading'},h('h2',{},t('dashboard.recent')),h('small',{class:'muted'},t('dashboard.projectCount',{n:projects.length}))),cards.length?h('div',{class:'project-grid'},cards):empty(t('dashboard.empty'),t('dashboard.emptyHelp'),button(t('dashboard.new'),()=>newProject(ctx),{primary:true}))));
+  root.append(h('section',{class:'stack'},h('div',{class:'section-heading'},h('h2',{},t('dashboard.recent')),h('small',{class:'muted'},t('dashboard.projectCount',{n:projects.length}))),cards.length?h('div',{class:'project-grid'},cards):empty(t(anime?'anime.empty':'dashboard.empty'),t('dashboard.emptyHelp'),button(t(anime?'anime.new':'dashboard.new'),()=>newProject(ctx,mode),{primary:true}))));
   const workerValue = data.system.workers?.workers || [];
   const workers = Array.isArray(workerValue) ? workerValue : Object.values(workerValue);
   const runningWorkers = workers.filter(worker => worker.state === 'running').length;
@@ -172,7 +175,7 @@ async function renderPage() {
       if (state.projectId) { navigate(`#/projects/${state.projectId}/chat`); return; }
       view=h('div',{class:'page'},pageHeader(t('nav.project'),t('dashboard.subtitle')),empty(t('dashboard.empty'),t('dashboard.emptyHelp'),button(t('dashboard.new'),()=>newProject(ctx),{primary:true})));
     } else {
-      const page={dashboard,projects:projectPage,assets:assetsPage,jobs:jobsPage,costs:costsPage,settings:settingsPage,system:systemPage}[key];
+      const page={dashboard,anime:ctx=>dashboard(ctx,'anime_sequel'),projects:projectPage,assets:assetsPage,jobs:jobsPage,costs:costsPage,settings:settingsPage,system:systemPage}[key];
       view=page ? await page(ctx) : empty(t('error.notFound'),t('error.notFoundHelp'),link(t('nav.dashboard'),'#/'));
     }
     if(serial!==state.serial)return;

@@ -165,6 +165,8 @@ class Project(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # "remake": an original video in a reference's style; "anime_sequel": the next episode.
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, default="remake")
     source_video_path: Mapped[str | None] = mapped_column(String, nullable=True)
     analysis_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     character_id: Mapped[str | None] = mapped_column(

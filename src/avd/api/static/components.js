@@ -26,7 +26,7 @@ const paths = {
   plus: ['M12 5v14','M5 12h14'], arrow: ['M5 12h14','m14 7 5 5-5 5'], close: ['m6 6 12 12','M6 18 18 6'], menu: ['M4 6h16','M4 12h16','M4 18h16'],
   refresh: ['M20 7v5h-5','M4 17v-5h5','M6 6a8 8 0 0 1 13 1','M18 18a8 8 0 0 1-13-1'], film: ['M3 3h18v18H3z','M7 3v18','M17 3v18','M3 8h4','M3 16h4','M17 8h4','M17 16h4'],
   check: ['m5 12 4 4L19 6'], download: ['M12 3v12','m7 10 5 5 5-5','M4 16v5h16v-5'], play: ['m8 5 11 7-11 7z'], info: ['M12 11v6','M12 7h.01'],
-  clock: ['M12 7v5l3 2'], image: ['M3 3h18v18H3z','m3 17 6-6 4 4 3-3 5 5','M8 7h.01']
+  clock: ['M12 7v5l3 2'], anime: ['M12 3l2.4 5.6L20 9l-4.3 3.9L17 19l-5-3-5 3 1.3-6.1L4 9l5.6-.4z'], image: ['M3 3h18v18H3z','m3 17 6-6 4 4 3-3 5 5','M8 7h.01']
 };
 export function icon(name, size = 20) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

@@ -123,7 +123,10 @@ class DirectorAgent:
         # Tools also use the runtime; import here to keep package imports acyclic.
         from .tools import DirectorTools
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, *self.history(project_id)]
+        with self.runtime.session_factory() as session:
+            mode = self._project(session, project_id).mode
+        system = SYSTEM_PROMPT + (ANIME_PROMPT if mode == "anime_sequel" else "")
+        messages = [{"role": "system", "content": system}, *self.history(project_id)]
         user_message: dict[str, Any] = {"role": "user", "content": text}
         if event:
             user_message["event"] = True
@@ -160,6 +163,22 @@ class DirectorAgent:
         self._append(project_id, {"role": "assistant", "content": ROUND_LIMIT_MESSAGE})
         return ROUND_LIMIT_MESSAGE
 
+
+ANIME_PROMPT = """
+ANIME SEQUEL MODE. This project continues an anime series as its next episode.
+- The analysis includes a story_bible (characters, world, art style, story so far, open
+  threads, cliffhanger). Your report should retell the episode, introduce the cast and
+  their relationships, describe the art style, and point out the hooks a sequel can use.
+- Pitch 2-3 sequel episode directions, each with a logline, 3-5 beats, which threads it pays
+  off, and a new cliffhanger. Ask which to develop; then expand it into an episode outline.
+- Characters here are drawn, fictional characters. Build their reference sheets with
+  create_character(generate_sheet=true) from the story bible's appearance notes in the same
+  anime style. Keep each character on-model across shots.
+- If the series belongs to someone else, mention once that a sequel is fan work for personal
+  use unless the user holds the rights; do not refuse.
+- Mind map: one branch per character and per open thread under "reference", the pitched
+  directions as options under "root", and the chosen episode beats as tasks.
+"""
 
 ANALYSIS_READY_EVENT = (
     "[系统通知] 参考视频已自动分析完成。请调用 get_project_status 读取分析结果，"

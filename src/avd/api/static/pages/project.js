@@ -518,7 +518,7 @@ export async function render(ctx) {
   const [project, jobs] = await Promise.all([api(path(id, "/status")), api(path(id, "/jobs"))]);
   const usage = ctx.projects?.find(item => item.id === id) || {};
   const tabs = h("nav", {class: "project-tabs", "aria-label": p("tabsLabel")}, ...TABS.map(tab => anchor(p(`tabs.${tab}`), route(id, tab), {class: current === tab ? "active" : "", "aria-current": current === tab ? "page" : null})));
-  const header = h("header", {class: "page-heading row spread wrap"}, h("div", {class: "stack compact"}, h("p", {class: "eyebrow"}, p("projectWorkspace")), h("h1", {}, project.title)), button(p("refresh"), () => ctx.reload(), {small: true}));
+  const header = h("header", {class: "page-heading row spread wrap"}, h("div", {class: "stack compact"}, h("p", {class: "eyebrow"}, project.mode === "anime_sequel" ? t("anime.eyebrow") : p("projectWorkspace")), h("h1", {}, project.title)), button(p("refresh"), () => ctx.reload(), {small: true}));
   const mindmapTab = () => h("section", {class: "card panel stack"}, h("h2", {}, p("tabs.mindmap")), h("p", {class: "muted"}, p("mindmapHelp")), liveMindMap(ctx, id));
   const renderers = {overview, chat, storyboard, shots, final: finalPage, analysis, mindmap: mindmapTab};
   const content = current === "overview" ? await overview(ctx, project, usage, jobs) : current === "chat" ? await chat(ctx, project, jobs) : await renderers[current](ctx, project);

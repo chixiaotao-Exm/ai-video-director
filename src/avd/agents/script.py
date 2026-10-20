@@ -74,6 +74,15 @@ def write_storyboard(
                     "Use the separately consented character and voice. Never copy the source person's "
                     "identity, face, voice or verbatim lines. Use contiguous shot indexes starting at 1. "
                     "The user must review this draft before any frames are generated."
+                    + (
+                        " This is the NEXT EPISODE of an anime series: continue from "
+                        "structure.story_bible (pick up the open threads and cliffhanger), "
+                        "keep every character's look and personality consistent, write each "
+                        "line as character dialogue or narration prefixed with the speaker, "
+                        "and write every visual_prompt in the series' anime art style."
+                        if template.story_bible is not None
+                        else ""
+                    )
                 ),
             },
             {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
