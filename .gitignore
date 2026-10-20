@@ -37,6 +37,7 @@ data/
 
 # T17 documentation captures are intentionally versioned (never runtime media).
 !docs/ui/*.png
+!docs/ui/studio/*.png
 
 # Build artifacts
 build/
@@ -45,3 +46,7 @@ dist/
 
 # Local sample media supplied by the user
 /test/
+
+# Vue dependencies and local tool caches; the production studio bundle is versioned.
+node_modules/
+frontend/.vite/

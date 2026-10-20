@@ -1,0 +1,265 @@
+{
+  "updated_at": "2026-10-20",
+  "summary": "第一支唱跳短片：Eleven Music v2.5 做歌，Kling 3.0 Motion Control 做全身舞蹈，Avatar 2.0 做唱歌近景。先做 15–30 秒副歌，再决定是否租 GPU。以下是选型方案，尚未接入生成按钮；选择方案不会调用服务或扣费。",
+  "presets": [
+    {
+      "id": "api-first",
+      "name": "先出第一支 MV",
+      "tagline": "歌曲、舞蹈、唱歌近景各选专长模型",
+      "fit": "想尽快验证原创 15–30 秒唱跳视频",
+      "mode": "api",
+      "hardware": "浏览器 + 现有电脑；生成端无需自购 GPU",
+      "integration": "选型方案 · 官方服务可外部试片，本程序尚未接入",
+      "stages": [
+        {
+          "stage": "歌曲",
+          "model": "Eleven Music v2.5",
+          "why": "生成歌声与伴奏，可按歌词和段落控制；有正式 Music API。",
+          "limitations": "API 需付费订阅；商用范围按套餐与音乐条款确认；不保证复刻你的歌声音色。",
+          "source_url": "https://elevenlabs.io/docs/overview/capabilities/music"
+        },
+        {
+          "stage": "全身舞蹈",
+          "model": "Kling VIDEO 3.0 Motion Control",
+          "why": "使用人物图和已授权舞蹈参考，先做 5–10 秒单人镜头。",
+          "limitations": "快速旋转、遮挡和手脚细节需检查；动作控制不保证歌词口型。",
+          "source_url": "https://kling.ai/quickstart/motion-control-user-guide"
+        },
+        {
+          "stage": "唱歌近景",
+          "model": "Kling Avatar 2.0",
+          "why": "官方展示了音频驱动的歌曲表演，适合与全身镜头交替剪辑。",
+          "limitations": "近景表现需实测；不替代指定全身编舞，也不承诺一次生成成功。",
+          "source_url": "https://kling.ai/release-note/release-notes/9bbqv0a76z"
+        }
+      ],
+      "estimated_cost_note": "Eleven 官方 API 页面参考价 US$0.15/分钟。Kling 3.0 动作控制标准 0.9、专业 1.2 units/秒；现金兑换与 Avatar 价格需按账户确认。另计重试，不是整片报价。",
+      "next_steps": [
+        "准备自有或已授权的人物图、歌词与单人舞蹈参考。",
+        "先在官方服务做短样片，确认音色、动作和口型，再扩大时长。",
+        "本程序接入前需补齐官方适配器、音轨输入、任务费用和授权记录。"
+      ]
+    },
+    {
+      "id": "laptop-hybrid",
+      "name": "已有显卡，花在刀刃上",
+      "tagline": "本地反复改音乐，重视频交给 API",
+      "fit": "已有约 12 GB 显存，想控制反复试歌的成本",
+      "mode": "hybrid",
+      "hardware": "12 GB 级 GPU 做音乐/口型；舞蹈通过官方 API",
+      "integration": "选型方案 · ACE 与动作 API 待接入，口型需验证 Comfy 图",
+      "stages": [
+        {
+          "stage": "歌曲草稿",
+          "model": "ACE-Step 1.5 2B turbo + 0.6B LM",
+          "why": "选小模型先迭代旋律与歌词；项目与官方权重采用 MIT。",
+          "limitations": "实际显存与时长有关；固定自己的歌声需单独验证，普通 TTS 无法替代歌唱。",
+          "source_url": "https://github.com/ace-step/ACE-Step-1.5"
+        },
+        {
+          "stage": "全身舞蹈",
+          "model": "Kling VIDEO 3.0 Motion Control",
+          "why": "把本地音乐确定后再付费生成动作片段。",
+          "limitations": "需要已授权动作参考；每次重试仍可能计费。",
+          "source_url": "https://kling.ai/document-api/apiReference/updateNotice?date=2026-02-11"
+        },
+        {
+          "stage": "近景口型试验",
+          "model": "MuseTalk 1.5",
+          "why": "本地口型候选，先用短片和清晰干声评估。",
+          "limitations": "歌唱、侧脸、遮挡需逐帧检查；辅助权重许可与新版 Comfy 节点需核验。",
+          "source_url": "https://github.com/TMElyralab/MuseTalk"
+        }
+      ],
+      "estimated_cost_note": "本地没有按次 API 费，但有电力和维护成本；舞蹈仍按 Kling 账户计费。本轮没有测量耗时、功耗或重试率。",
+      "next_steps": [
+        "先确认实际可用显存；笔记本型号名称不等于显存大小。",
+        "独立环境运行 ACE 小模型，再验证 5 秒口型。",
+        "已有硬件能完成音乐草稿时，暂不购买新 GPU。"
+      ]
+    },
+    {
+      "id": "local-performance",
+      "name": "本地唱跳工作室",
+      "tagline": "先租 48 GB 验证，再决定长期硬件",
+      "fit": "希望本地生成、愿意维护 ComfyUI 和模型环境",
+      "mode": "local",
+      "hardware": "24 GB 做音乐/口型；48 GB 租卡试验舞蹈，所需显存待实测",
+      "integration": "选型方案 · 需要新增音乐/舞蹈任务和可执行工作流",
+      "stages": [
+        {
+          "stage": "歌曲",
+          "model": "ACE-Step 1.5 XL turbo / XL sft",
+          "why": "本地音乐首选升级档，官方 XL 推荐至少 20 GB 显存。",
+          "limitations": "12 GB offload 是官方可选条件，不代表低延迟；24 GB 档也要测试实际配置。",
+          "source_url": "https://github.com/ace-step/ACE-Step-1.5"
+        },
+        {
+          "stage": "音乐驱动舞蹈",
+          "model": "Wan Dancer",
+          "why": "Comfy 官方原生模板以人物图和音频生成舞蹈，Apache-2.0。",
+          "limitations": "默认示例 5 秒/149 帧，未公布明确最低显存；48 GB 是试验建议，不是运行保证。不能保证复现指定编舞。",
+          "source_url": "https://docs.comfy.org/tutorials/video/wan/wan-dancer"
+        },
+        {
+          "stage": "近景口型",
+          "model": "MuseTalk 1.5；按需对比 LatentSync 1.6",
+          "why": "让歌曲先定稿，再对正脸近景评估口型。",
+          "limitations": "LatentSync 默认辅助权重存在许可限制；未经核验不作商用默认。",
+          "source_url": "https://github.com/TMElyralab/MuseTalk"
+        }
+      ],
+      "estimated_cost_note": "租价、存储流量费与购买报价未核定。记录每段生成耗时和重试率后，再比较租用月成本与整机成本。",
+      "next_steps": [
+        "先租单卡完成 5 秒样片，记录峰值显存、耗时和版本。",
+        "把所有辅助模型的许可和工作流输入列清，再导出 API 图。",
+        "连续样片达到预期后，再决定是否买 24 / 48 GB 级硬件。"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "eleven-music",
+      "name": "Eleven Music v2.5",
+      "category": "歌曲 · API",
+      "verdict": "API 首选",
+      "why": "正式 API 生成歌声与伴奏，支持歌词和结构控制。",
+      "hardware": "无需本地 GPU",
+      "license": "按 Eleven 音乐条款与订阅计划；不是无条件商用许可",
+      "integration": "尚未接入",
+      "source_url": "https://elevenlabs.io/docs/api-reference/music/compose"
+    },
+    {
+      "id": "ace-step",
+      "name": "ACE-Step 1.5 / XL",
+      "category": "歌曲 · 本地",
+      "verdict": "本地首选",
+      "why": "12 GB 档先试 2B；24 GB 档优先评估 XL。",
+      "hardware": "XL 官方 ≥12 GB offload、≥20 GB 推荐；不代表本机实测",
+      "license": "MIT 项目与所核查 XL turbo 权重；输入权利另核",
+      "integration": "音乐任务与适配器待接入",
+      "source_url": "https://github.com/ace-step/ACE-Step-1.5"
+    },
+    {
+      "id": "kling-motion",
+      "name": "Kling VIDEO 3.0 Motion Control",
+      "category": "舞蹈 · API",
+      "verdict": "参考舞蹈首选",
+      "why": "人物图 + 参考动作视频；已核查正式 API。",
+      "hardware": "无需本地 GPU",
+      "license": "按官方服务条款；人物与动作参考需获授权",
+      "integration": "动作参考输入与官方 API 待接入",
+      "source_url": "https://kling.ai/quickstart/motion-control-user-guide"
+    },
+    {
+      "id": "kling-avatar",
+      "name": "Kling Avatar 2.0",
+      "category": "歌唱近景 · API",
+      "verdict": "近景候选",
+      "why": "官方有歌唱案例；与全身舞蹈交替剪辑。",
+      "hardware": "无需本地 GPU",
+      "license": "按官方服务条款；上传图与音频需获授权",
+      "integration": "尚未接入；并非指定全身编舞模型",
+      "source_url": "https://kling.ai/release-note/release-notes/9bbqv0a76z"
+    },
+    {
+      "id": "wan-dancer",
+      "name": "Wan Dancer",
+      "category": "舞蹈 · 本地",
+      "verdict": "音乐驱动舞蹈首选试验",
+      "why": "Comfy 官方图支持人物图 + 音频；先试默认 5 秒。",
+      "hardware": "官方未给最低显存；建议 48 GB 租卡验证，不保证",
+      "license": "Apache-2.0；辅助权重仍需单独核验",
+      "integration": "音频驱动视频输入与实际工作流待接入",
+      "source_url": "https://docs.comfy.org/tutorials/video/wan/wan-dancer"
+    },
+    {
+      "id": "wan-animate",
+      "name": "Wan2.2 Animate-14B",
+      "category": "动作迁移 · 本地",
+      "verdict": "有参考舞蹈时的备选",
+      "why": "官方提供角色动画与替换；可迁移动作表现。",
+      "hardware": "显存待工作流实测，不套用 TI2V-5B 数据",
+      "license": "Apache-2.0；辅助权重与输入许可另核",
+      "integration": "动作参考上传与实际工作流待接入",
+      "source_url": "https://github.com/Wan-Video/Wan2.2"
+    },
+    {
+      "id": "musetalk",
+      "name": "MuseTalk 1.5",
+      "category": "口型 · 本地",
+      "verdict": "本地近景首选试验",
+      "why": "256² 面部区域；先验证清晰正脸与歌唱干声。",
+      "hardware": "上游有 4 GB fp16 个例，非通用显存保证",
+      "license": "MIT / 作者权重允许商用，辅助模型另核",
+      "integration": "已有 lipsync 契约；仍需可执行的 1.5 图",
+      "source_url": "https://github.com/TMElyralab/MuseTalk"
+    },
+    {
+      "id": "latentsync",
+      "name": "LatentSync 1.6",
+      "category": "口型 · 本地",
+      "verdict": "许可核验后的对比候选",
+      "why": "更高分辨率口型方案，需单独测试歌唱表现。",
+      "hardware": "官方最低 18 GB",
+      "license": "代码 Apache-2.0、权重 OpenRAIL++；默认 InsightFace 权重存在非商用限制",
+      "integration": "没有已验证工作流，不作商用默认",
+      "source_url": "https://github.com/bytedance/LatentSync"
+    },
+    {
+      "id": "minimax-music",
+      "name": "MiniMax Music 3",
+      "category": "歌曲 · API / 开放权重",
+      "verdict": "不推荐新用户购买音乐 API",
+      "why": "官方从 2026-08-20 起停止向新用户开放付费音乐 API；已有付费用户可继续。",
+      "hardware": "本轮未验证开放权重部署",
+      "license": "服务与开放权重分别核验；不是旧 Music 2.5 教程的沿用承诺",
+      "integration": "未接入",
+      "source_url": "https://platform.minimax.io/docs/api-reference/music-generation"
+    },
+    {
+      "id": "tts-boundary",
+      "name": "CosyVoice3 / GPT-SoVITS",
+      "category": "对白 / 旁白",
+      "verdict": "保留给说话",
+      "why": "普通 TTS 不等于按旋律唱歌，也不等于歌声音色转换。",
+      "hardware": "按现有配音模型文档验证",
+      "license": "模型和辅助权重分别核验；克隆声音需确认授权",
+      "integration": "已有 tts 契约，实际 Comfy 图仍需安装验证",
+      "source_url": "https://github.com/QwenAudio/CosyVoice"
+    },
+    {
+      "id": "suno-unverified",
+      "name": "Suno / 第三方兼容 API",
+      "category": "歌曲 · 外部服务",
+      "verdict": "暂不加入自动化默认",
+      "why": "本轮未核实公开可集成的 Suno 官方 API；第三方名称不代表官方授权。",
+      "hardware": "不适用",
+      "license": "官网使用权与第三方封装条款分别确认",
+      "integration": "未接入，未调用或购买",
+      "source_url": "https://help.suno.com/"
+    }
+  ],
+  "sources": [
+    {"label": "Eleven Music 能力与 v2.5", "url": "https://elevenlabs.io/docs/overview/capabilities/music", "accessed": "2026-10-20"},
+    {"label": "Eleven Music API 开放范围", "url": "https://elevenlabs.io/docs/eleven-creative/products/music", "accessed": "2026-10-20"},
+    {"label": "Eleven Music compose API", "url": "https://elevenlabs.io/docs/api-reference/music/compose", "accessed": "2026-10-20"},
+    {"label": "Eleven Music 使用条款", "url": "https://elevenlabs.io/music-terms", "accessed": "2026-10-20"},
+    {"label": "Eleven 官方 API 价目", "url": "https://elevenlabs.io/pricing/api", "accessed": "2026-10-20"},
+    {"label": "ACE-Step 官方代码与硬件要求", "url": "https://github.com/ace-step/ACE-Step-1.5", "accessed": "2026-10-20"},
+    {"label": "ACE-Step XL turbo 官方权重", "url": "https://huggingface.co/ACE-Step/acestep-v15-xl-turbo", "accessed": "2026-10-20"},
+    {"label": "Kling 动作控制官方指南", "url": "https://kling.ai/quickstart/motion-control-user-guide", "accessed": "2026-10-20"},
+    {"label": "Kling API 更新与计费单位", "url": "https://kling.ai/document-api/apiReference/updateNotice?date=2026-02-11", "accessed": "2026-10-20"},
+    {"label": "Kling Avatar 2.0 官方发布与歌唱案例", "url": "https://kling.ai/release-note/release-notes/9bbqv0a76z", "accessed": "2026-10-20"},
+    {"label": "Comfy 官方 Wan Dancer", "url": "https://docs.comfy.org/tutorials/video/wan/wan-dancer", "accessed": "2026-10-20"},
+    {"label": "Wan2.2 官方代码", "url": "https://github.com/Wan-Video/Wan2.2", "accessed": "2026-10-20"},
+    {"label": "Comfy 官方 Wan2.2 Animate", "url": "https://docs.comfy.org/tutorials/video/wan/wan2-2-animate", "accessed": "2026-10-20"},
+    {"label": "MuseTalk 官方代码与许可", "url": "https://github.com/TMElyralab/MuseTalk", "accessed": "2026-10-20"},
+    {"label": "LatentSync 官方代码", "url": "https://github.com/bytedance/LatentSync", "accessed": "2026-10-20"},
+    {"label": "LatentSync 1.6 权重卡", "url": "https://huggingface.co/ByteDance/LatentSync-1.6", "accessed": "2026-10-20"},
+    {"label": "InsightFace 许可政策", "url": "https://github.com/deepinsight/insightface#license", "accessed": "2026-10-20"},
+    {"label": "MiniMax 音乐 API 开放限制", "url": "https://platform.minimax.io/docs/api-reference/music-generation", "accessed": "2026-10-20"},
+    {"label": "CosyVoice 官方代码", "url": "https://github.com/QwenAudio/CosyVoice", "accessed": "2026-10-20"},
+    {"label": "Suno 官方帮助中心（公开 API 尚未核实）", "url": "https://help.suno.com/", "accessed": "2026-10-20"}
+  ]
+}

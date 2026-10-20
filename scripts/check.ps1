@@ -12,6 +12,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $checkPython -m mypy
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $checkPython scripts/check_frontend.py
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $checkPython scripts/check_js.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $checkPython -m pytest -q

@@ -3,34 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>AI Video Director · 导演工作台</title>
+  <meta name="color-scheme" content="dark light">
+  <title>AVD Studio · 你的创作工作室</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/styles.css">
-  <link rel="stylesheet" href="/static/theme.css">
-  <script type="module" src="/static/app.js"></script>
+  <script src="/static/studio-theme.js"></script>
+  <link rel="stylesheet" href="/static/studio/studio.css">
+  <script type="module" src="/static/studio/studio.js"></script>
 </head>
 <body>
-  <aside class="sidebar" aria-label="主导航">
-    <a id="brand" class="brand" href="#/"></a>
-    <nav id="navigation" class="nav"></nav>
-    <p id="sidebar-note" class="sidebar-foot"></p>
-  </aside>
-  <div class="app-body">
-    <header class="topbar">
-      <button id="menu-toggle" class="button" type="button" aria-controls="navigation" aria-expanded="false"></button>
-      <div class="toolbar">
-        <div id="project-switcher" class="project-switcher"></div>
-      </div>
-      <div class="toolbar">
-        <span id="top-budget" class="top-budget"></span>
-        <span id="connection" class="connection"></span>
-        <button id="refresh" class="button refresh-button" type="button"></button>
-      </div>
-    </header>
-    <main id="content" class="content" aria-live="polite" aria-busy="true"></main>
-  </div>
+  <div id="studio-app" aria-live="polite"></div>
   <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
   <noscript>请启用 JavaScript 以使用导演工作台。</noscript>
 </body>

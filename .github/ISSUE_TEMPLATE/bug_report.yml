@@ -1,0 +1,37 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem in AI Video Director.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "请提供复现信息，不要上传 API Key、.env、授权素材或含私人信息的日志。"
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Git commit
+      description: 从浏览器版本中心复制包版本与短提交哈希。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: "1. 打开…\n2. 点击…\n3. 出现…"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果和实际结果
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统、浏览器和 GPU（如相关）
+      placeholder: Windows 11 / Edge / RTX …
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏日志或截图
+      description: 请先删除凭据、私人文件名和素材内容。

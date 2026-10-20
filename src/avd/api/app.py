@@ -28,6 +28,7 @@ from starlette.concurrency import run_in_threadpool
 
 from avd.api.security import LocalOnlyMiddleware
 from avd.api.settings_api import install_settings_routes
+from avd.api.versions_control import install_version_routes
 from avd.api.workers import install_worker_routes
 from avd.api.workspace import install_workspace_routes, redact_public
 from avd.assets.library import AssetLibrary
@@ -464,6 +465,7 @@ def create_app(
     install_settings_routes(application, current_runtime, refresh_settings)
     install_workspace_routes(application, current_runtime)
     install_worker_routes(application)
+    install_version_routes(application)
 
     @application.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, error: RequestValidationError) -> JSONResponse:

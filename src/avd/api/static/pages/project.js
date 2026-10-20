@@ -511,7 +511,7 @@ function activity(jobs) {
   return h("div", {class: "chat-activity", role: "status"}, h("span", {class: "pulse", "aria-hidden": "true"}), `${p(`activity.${key}`)}${count}`);
 }
 
-const ATTACH_KINDS = {image: /\.(png|jpe?g|webp|gif)$/i, video: /\.(mp4|mov|webm|mkv)$/i, audio: /\.(wav|mp3|m4a|flac|ogg|aac)$/i};
+const ATTACH_KINDS = {image: /\.(png|jpe?g|webp)$/i, video: /\.(mp4|mov|webm|mkv|avi)$/i, audio: /\.(wav|mp3|m4a|flac)$/i};
 const kindOf = name => Object.keys(ATTACH_KINDS).find(kind => ATTACH_KINDS[kind].test(name)) || null;
 
 export async function chatPanel(ctx, projectId, {compact = false} = {}) {
@@ -522,7 +522,7 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
   const log = h("div", {class: "chat-log", role: "log", "aria-live": "polite", "aria-label": p("chatHistory")}, chatMessages(history));
   const status = h("div", {class: "chat-status"}, activity(initialJobs));
   const textarea = h("textarea", {name: "message", rows: compact ? 1 : 2, placeholder: p("messagePlaceholder"), "aria-label": p("message")});
-  const picker = h("input", {type: "file", multiple: true, accept: "image/*,video/*,audio/*", hidden: true});
+  const picker = h("input", {type: "file", multiple: true, accept: ".png,.jpg,.jpeg,.webp,.mp4,.mov,.webm,.mkv,.avi,.wav,.mp3,.m4a,.flac", hidden: true});
   const chips = h("div", {class: "attach-chips"});
   let files = [];
   const renderChips = () => {
@@ -567,9 +567,10 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
       show(result.history);
     } catch (error) {
       notice(error.message, true);
-      show(await api(path(projectId, "/chat")));
       if (!textarea.value.trim()) textarea.value = text;
-      files = outgoing; renderChips();
+      files = [...outgoing, ...files]; renderChips();
+      try { show(await api(path(projectId, "/chat"))); }
+      catch { /* Keep the restored draft when the network is still unavailable. */ }
     } finally {
       sending = false; send.disabled = false; attach.disabled = false; textarea.focus();
       scrollEnd();

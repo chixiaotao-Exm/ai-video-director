@@ -98,3 +98,29 @@ Managed worker start is idempotent, lane controls preserve other workers, stop i
 - Headless Edge verified 38 desktop/mobile page/region captures and two consent-dialog captures. All 40 PNGs were visually inspected; overflow, narrow-table wrapping, player sizing, mobile budget/header layout, duplicate historical SSE notifications and edit-preservation issues were fixed. Ten real browser form/control flows passed against a fresh local offline fixture, with no model calls.
 - Screenshots contain synthetic content and unconfigured provider panels. Existing user-entered demonstration settings and the service using them were preserved; temporary validation servers/workers/browsers were cleaned up.
 - External boundaries remain: no real paid provider, GPU inference, rented-host installation or real exported ComfyUI graph was exercised. Offline controls/visual checks do not certify model quality or hardware compatibility. This remains a local single-user application.
+
+## Studio 0.2 review — 2026-10-20
+
+The user's changes through `40ae226` were reviewed again before integrating the Vue workspace. This release preserves those features and does not claim every pre-existing finding is resolved.
+
+Resolved findings from the 14-item review: **1** deletion/worker claim race; **2** search budget/confirmation bypass; **8** failed-send draft restoration; **11** mobile overview columns; **13** attachment picker mismatch. Deletion and search have 24 new offline regressions. A separate review found and fixed a new Vue stale-project navigation issue; real Edge tests now delete only a newly created fixture project and check the selector, navigation, command search and stored project identity.
+
+The new version endpoint was checked for fixed repository scope, no client-supplied commands/paths, credential-safe remote display, no lazy fetch, cached-ref labeling and graceful failure outside Git. Four themes preserve chat input visibility and current editing state. Native Vue pages coexist with the existing operation modules; full migration of every legacy module is not claimed.
+
+Verification: local Python **737 passed, 2 Windows symlink skips**, Ruff/format/mypy green, frontend **3/3**, browser interactions **15/15**, headless captures **58/58**. The compiled wheel includes all nested static assets. Screenshots use synthetic media and no provider credentials.
+
+### Still open from the user's 40ae226 code
+
+| Prior item | Priority | Remaining issue | Relevant module |
+| --- | --- | --- | --- |
+| 3 | P2 | Concurrent watcher completion can enqueue duplicate director reports. | `director/subagents.py` |
+| 4 | P2 | A permanently failed subagent job can leave its agent in working state. | `director/subagents.py` |
+| 5 | P2 | Stopping an active subagent does not recheck cancellation before each later model/tool call. | `director/subagents.py` |
+| 6 | P2 | Parallel worker slots share one active-claim record; uncertain cleanup can fence only one claim. | `jobs/supervisor.py` |
+| 7 | P2 | Analysis completion bypasses custom watcher completion dispatch. | `runtime.py` |
+| 9 | P2 | Mind-map updates allow indirect parent cycles and invalid layout coordinates. | `director/mindmap.py` |
+| 10 | P2 | The AI-label setting is absent from final execution snapshots/cache identity. | `executors/handlers.py` |
+| 12 | P2 | Arbitrary-format DeepSeek relay credentials are missing from shared exact-value diagnostic redaction. | `api/workspace.py` |
+| 14 | P3 | Failed source separation can leave unregistered intermediate media files. | `assets/media.py` |
+
+These modules were not expanded into unrelated rewrites during the Studio upgrade. The detailed original reproduction report remains locally at `data/review-current/review-40ae226.md` (ignored runtime/audit data). Real singing/music/motion adapters, paid-provider trials, GPU/custom-node validation and exported ComfyUI workflows remain external integration work. Plan consent does not grant or change asset-library consent.

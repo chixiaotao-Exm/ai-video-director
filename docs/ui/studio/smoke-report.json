@@ -1,0 +1,222 @@
+{
+  "started_at": "2026-10-20T23:19:44.743Z",
+  "browser": "Microsoft Edge",
+  "base_url": "http://127.0.0.1:8010",
+  "fixture": "data/studio-preview/ui-manifest.json",
+  "steps": [
+    {
+      "name": "isolated fixture has no keys, workers, or pending jobs",
+      "passed": true,
+      "details": {
+        "offline": true,
+        "provider_keys_configured": false,
+        "workers_running": 0,
+        "pending_jobs": 0
+      }
+    },
+    {
+      "name": "quick theme menu applies all four themes and persists on reload",
+      "passed": true,
+      "details": {
+        "themes": [
+          "midnight",
+          "glass",
+          "acid",
+          "editorial"
+        ],
+        "persisted": "editorial"
+      }
+    },
+    {
+      "name": "quick theme changes preserve an unsent legacy chat draft",
+      "passed": true,
+      "details": {
+        "themes_checked": 4,
+        "draft_preserved": true,
+        "chat_post_requests": 0
+      }
+    },
+    {
+      "name": "appearance page selects exactly one of four full templates",
+      "passed": true,
+      "details": {
+        "templates": 4,
+        "selected_aria_pressed": 1
+      }
+    },
+    {
+      "name": "performance presets update the actual selected model pipeline",
+      "passed": true,
+      "details": {
+        "presets": 3,
+        "selected": "local-performance",
+        "capability_boundaries_visible": true
+      }
+    },
+    {
+      "name": "performance draft restores fields but never restores consent",
+      "passed": true,
+      "details": {
+        "restored_fields": 7,
+        "voice": "clone",
+        "consent_after_reload": false,
+        "storage_key": "avd.performance-plan"
+      }
+    },
+    {
+      "name": "plan download contains the brief and stays inside the repository",
+      "passed": true,
+      "details": {
+        "file": "data/ui-browser/studio-smoke-zIrdVr/downloads/Studio 离线唱跳验收 mvhb2lpk.md",
+        "checked": true
+      }
+    },
+    {
+      "name": "create project requires fresh plan acknowledgement and submits no generation",
+      "passed": true,
+      "details": {
+        "project_id": "99c5b0a0-19d0-4632-bf5d-3b8e71c78516",
+        "mode": "remake",
+        "source_uploaded": false,
+        "jobs_submitted": 0
+      }
+    },
+    {
+      "name": "Ctrl K command palette navigates to the version center",
+      "passed": true,
+      "details": {
+        "keyboard": "Ctrl+K",
+        "destination": "#/versions"
+      }
+    },
+    {
+      "name": "version center reflects local Git and refreshes without remote fetch",
+      "passed": true,
+      "details": {
+        "branch": "main",
+        "head": "79109a0a",
+        "local_commits": 15,
+        "source": "local_refs"
+      }
+    },
+    {
+      "name": "mobile menu navigates at 390 pixels and closes without overflow",
+      "passed": true,
+      "details": {
+        "width": 390,
+        "height": 844,
+        "destination": "#/performance",
+        "horizontal_overflow": false
+      }
+    },
+    {
+      "name": "intercepted POST and history GET failures preserve the unsent chat draft",
+      "passed": true,
+      "details": {
+        "post_status": 502,
+        "history_status": 502,
+        "forwarded_to_server": false,
+        "draft_restored": true,
+        "send_enabled": true,
+        "history_unchanged": true
+      }
+    },
+    {
+      "name": "deleting only this run empty project clears every shell reference",
+      "passed": true,
+      "details": {
+        "deleted_project_id": "99c5b0a0-19d0-4632-bf5d-3b8e71c78516",
+        "manifest_project_untouched": true,
+        "selector_cleared": true,
+        "current_project_link_cleared": true,
+        "command_search_cleared": true,
+        "persisted_reference_cleared": true
+      }
+    },
+    {
+      "name": "project list refresh failure after deletion keeps navigation usable and recovers",
+      "passed": true,
+      "details": {
+        "simulated_status": 502,
+        "prior_cache_preserved": true,
+        "deleted_reference_restored": false,
+        "navigation_usable": true,
+        "recovered_on_next_navigation": true
+      }
+    },
+    {
+      "name": "final fixture has unchanged jobs, spend, workers, and asset consent",
+      "passed": true,
+      "details": {
+        "jobs_added": 0,
+        "spend_changed": false,
+        "workers_started": 0,
+        "asset_consent_changed": false,
+        "paid_calls": 0,
+        "external_requests": 0,
+        "empty_projects_created": 1,
+        "own_empty_projects_deleted": 1,
+        "pre_existing_projects_unchanged": true
+      }
+    }
+  ],
+  "exceptions": [],
+  "console_errors": [],
+  "expected_network_errors": [
+    {
+      "path": "/projects/f36da675-6166-4190-bf64-22c22287a8a2/chat",
+      "status": 502
+    },
+    {
+      "path": "/projects/f36da675-6166-4190-bf64-22c22287a8a2/chat",
+      "status": 502
+    },
+    {
+      "path": "/projects",
+      "status": 502
+    }
+  ],
+  "blocked_requests": [],
+  "simulated_requests": [
+    {
+      "method": "POST",
+      "path": "/projects/f36da675-6166-4190-bf64-22c22287a8a2/chat",
+      "status": 502,
+      "forwarded": false
+    },
+    {
+      "method": "GET",
+      "path": "/projects/f36da675-6166-4190-bf64-22c22287a8a2/chat",
+      "status": 502,
+      "forwarded": false
+    },
+    {
+      "method": "GET",
+      "path": "/projects",
+      "status": 502,
+      "forwarded": false
+    }
+  ],
+  "writes": [
+    {
+      "method": "POST",
+      "path": "/projects",
+      "operation": "create-empty-fixture-project"
+    },
+    {
+      "method": "DELETE",
+      "path": "/projects/99c5b0a0-19d0-4632-bf5d-3b8e71c78516",
+      "operation": "delete-own-empty-fixture-project"
+    }
+  ],
+  "delete_confirmations": [
+    {
+      "project_id": "99c5b0a0-19d0-4632-bf5d-3b8e71c78516",
+      "accepted": true,
+      "fixture_created_by_this_run": true
+    }
+  ],
+  "unexpected_dialogs": [],
+  "finished_at": "2026-10-20T23:19:53.286Z",
+  "passed": true
+}

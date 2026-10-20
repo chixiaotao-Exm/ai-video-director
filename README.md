@@ -1,4 +1,34 @@
-# AI Video Director
+# AVD Studio · AI Video Director
+
+Vue 3 创作工作室：四套可切换模板、唱跳 MV 制作方案、项目导演对话、素材与任务管理，以及 GitHub 版本中心。
+
+![Midnight Studio](docs/ui/studio/midnight-home-desktop.png)
+
+- **Midnight Studio**：暗色电影工作室，雾紫与薄荷。
+- **Liquid Glass**：iOS 27 / Apple 风格灵感，通透玻璃层次；非官方系统复刻。
+- **Acid Edit**：黑白酸橙，利落的创作界面。
+- **Sunday Editorial**：暖纸色与衬线标题，独立杂志气质。
+
+顶部外观菜单可以原地切换模板，偏好保存在当前浏览器。动画遵循系统“减少动态效果”。首页、唱跳方案、外观和版本中心是 Vue 组件；原有项目细粒度操作由 Vue 生命周期适配组件承载，保留既有对话、素材、分镜、工作进程和审批能力。
+
+**当前版本：0.2.0。** [版本说明](CHANGELOG.md) · [截图与验收](docs/ui/studio/README.md) · [唱跳模型选型](docs/PERFORMANCE_MODELS.md) · [GitHub 版本管理](docs/VERSION_CONTROL.md)
+
+首支唱跳样片建议先走 **Eleven Music v2.5 + Kling Motion Control + Avatar 歌唱近景**。现有显卡可尝试 ACE-Step；先验证样片再决定 GPU 投入。推荐页提供制作草案与官方证据，**这些新音乐/动作 API 还不是本仓库的生成适配器**，选择方案不会收费或开始生成。
+
+## 前端开发与验证
+
+发布的 Python 包自带前端构建产物，正常使用只需 `avd serve`，无须运行 Node。修改 Vue 源码时使用 Node 24：
+
+```text
+npm ci --prefix frontend
+npm run build --prefix frontend
+npm test --prefix frontend
+```
+
+构建输出到 `src/avd/api/static/studio/`，与源代码一起提交；Vue 的 MIT 声明随产物保留。`scripts/check.ps1` / `scripts/check.sh` 会构建、执行前端离线测试、检查所有 JS，并运行 Python 质量检查；缺依赖时明确提示先执行 npm ci，不会偷偷联网安装。
+
+开发模式可先启动本地后端，再在另一终端运行 `npm run dev --prefix frontend`。Vite 只监听回环地址，前端请求代理到本机8000端口，安全校验保留。
+
 
 本地运行的有状态视频导演：从参考视频提取结构和风格，以已获授权的人物与声音制作新视频，并只重建修改影响的镜头。SQLite 保存项目、资产、不可变版本、费用和持久化任务。
 
@@ -177,9 +207,9 @@ Ctrl+C / SIGTERM 停止领取新任务，给当前任务 `AVD_WORKER_SHUTDOWN_GR
 
 服务仅接受 localhost、127.0.0.1 或 ::1 的 Host；浏览器写请求的 Origin 必须与应用一致。命令行无 Origin 的请求仍可用。连接测试不自动运行；模型测试需要选择费用归属项目，最多请求八个输出 token，正常执行预算检查和费用记账。ComfyUI 测试只读取 /system_stats。
 
-## 白色 Web UI 与截图验证
+## T17 界面验收记录
 
-工作台、项目六个标签页、素材库、任务队列、费用、设置和系统均使用中文白色界面；手机导航在顶部菜单中。分镜/费用等宽表格可在面板内横向滚动。配置密钥仅写入本机，连接测试只由明确点击触发。
+T17 的中文白色界面和验收图保留在下面的历史记录中。当前 0.2.0 使用本文开头的四套 Vue 模板，新增思维导图等已有功能也继续可用。分镜/费用等宽表格在面板内横向滚动；配置密钥仅写入本机，连接测试只由明确点击触发。
 
 `scripts/check.ps1` / `scripts/check.sh` 现在也运行每个 JavaScript 模块的 `node --check`。界面截图索引与检查结果见 [docs/ui/README.md](docs/ui/README.md)：40 张桌面/手机 PNG、页面诊断报告和 10 项离线浏览器操作报告。
 

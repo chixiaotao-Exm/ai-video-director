@@ -1,4 +1,4 @@
-"""The build-free white workspace is served locally and has no remote assets."""
+"""The locally bundled Vue studio keeps the existing browser workflows available."""
 
 from __future__ import annotations
 
@@ -49,8 +49,9 @@ def test_workspace_and_local_static_resources_are_served(client: TestClient) -> 
     assert set(parser.resources) == {
         "/static/tokens.css",
         "/static/styles.css",
-        "/static/theme.css",
-        "/static/app.js",
+        "/static/studio-theme.js",
+        "/static/studio/studio.css",
+        "/static/studio/studio.js",
     }
     for path in parser.resources:
         resource = client.get(path)
@@ -68,18 +69,17 @@ def test_workspace_and_local_static_resources_are_served(client: TestClient) -> 
     assert client.get("/static/%2e%2e/app.py").status_code == 404
 
 
-def test_workspace_is_pure_white_localized_and_accessible(client: TestClient) -> None:
+def test_workspace_uses_local_vue_bundle_and_accessible_theme_controls(client: TestClient) -> None:
     html = client.get("/").text
-    script = client.get("/static/app.js").text
-    css = client.get("/static/styles.css").text
-    tokens = client.get("/static/tokens.css").text
-    assert "color-scheme: light" in tokens
-    assert "#FFFFFF" in tokens and "#111111" in tokens
-    assert "https://" not in html + script + css
-    assert '<meta name="color-scheme" content="dark">' not in html
-    assert "innerHTML" not in script and "insertAdjacentHTML" not in script
+    theme_script = client.get("/static/studio-theme.js").text
+    css = client.get("/static/studio/studio.css").text
+    assert "https://" not in html + theme_script
+    assert 'id="studio-app"' in html
+    for theme in ("midnight", "glass", "acid", "editorial"):
+        assert theme in theme_script and theme in css
+    assert "prefers-reduced-motion" in css
     assert 'lang="zh-CN"' in html
-    assert "aria-live" in html and "menu-toggle" in html
+    assert "aria-live" in html
 
 
 def test_every_browser_api_route_is_declared_and_exists(client: TestClient) -> None:
