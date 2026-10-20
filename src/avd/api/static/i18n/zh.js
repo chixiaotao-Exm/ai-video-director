@@ -521,7 +521,7 @@ const STRINGS = {
   "settings.readOnlyHint": "数据位置在启动时确定；浏览器不能移动文件或更换数据库。",
   "settings.database": "数据库地址（只读）",
   "settings.saveGeneral": "保存通用设置",
-  "settings.generalTitle": "预算与运行设置",
+  "settings.generalTitle": "运行设置",
   "settings.advancedTitle": "高级配置",
   "settings.advancedHint": "可在这里设置角色路由、不同任务的费用与超时，以及工作流路径。JSON 字段填写对象即可。",
   "settings.maxTokens": "模型单次最大输出 token",

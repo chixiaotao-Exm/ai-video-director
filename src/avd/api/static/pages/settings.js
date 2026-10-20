@@ -6,7 +6,23 @@ const PROVIDERS = [
   {name: 'anthropic', models: ['director_model']},
   {name: 'openai', models: ['script_model', 'qa_model', 'image_model']},
   {name: 'gemini', models: ['gemini_model']},
+  {name: 'deepseek', models: ['deepseek_model']},
 ];
+
+// Model fields stay free text, with the endpoint's live model list as suggestions.
+function modelInput(provider, name, value, ctx) {
+  const listId = `models-${provider}`;
+  let list = document.getElementById(listId);
+  if (!list) {
+    list = h('datalist', {id: listId});
+    document.body.append(list);
+    ctx.onDispose(() => list.remove());
+    api(`/settings/models/${provider}`, {signal: ctx.signal}).then(result => {
+      list.replaceChildren(...result.models.map(model => h('option', {value: model})));
+    }).catch(() => {});
+  }
+  return input('text', value || '', {name, list: listId, autocomplete: 'off', spellcheck: false});
+}
 
 function statusLine() {
   return h('p', {class: 'form-feedback muted', role: 'status', 'aria-live': 'polite'});
@@ -65,19 +81,14 @@ export async function render(ctx) {
   }
 
   async function connection(provider, status, profile = null) {
-    if (provider !== 'comfyui' && !ctx.projectId) {
-      status.className = 'form-feedback error-text';
-      status.textContent = t('settings.selectProject');
-      return;
-    }
     status.className = 'form-feedback muted';
     status.textContent = t('settings.testing');
     try {
       await api(`/settings/test/${provider}`, {
         method: 'POST',
-        body: provider === 'comfyui' ? {profile} : {project_id: ctx.projectId},
+        body: provider === 'comfyui' ? {profile} : (ctx.projectId ? {project_id: ctx.projectId} : {}),
       });
-      status.textContent = provider === 'comfyui' ? t('settings.connected') : t('settings.connectedBilled');
+      status.textContent = t('settings.connected');
     } catch (error) {
       status.className = 'form-feedback error-text';
       status.textContent = `${t('settings.connectionFailed')} ${asError(error)}`;
@@ -281,10 +292,6 @@ export async function render(ctx) {
   const generalStatus = statusLine();
   const general = form([
     h('div', {class: 'grid-2'},
-      field(t('settings.defaultBudget'), input('number', values().default_budget_limit ?? '', {name: 'default_budget_limit', min: 0, step: 'any'}), t('settings.defaultBudgetHint')),
-      field(t('settings.confirmThreshold'), input('number', values().confirm_threshold, {name: 'confirm_threshold', min: 0, step: 'any', required: true}), t('settings.confirmThresholdHint')),
-    ),
-    h('div', {class: 'grid-2'},
       field(t('settings.logFormat'), select([{value: 'text', label: t('settings.logText')}, {value: 'json', label: 'JSON'}], values().log_format, {name: 'log_format'})),
       field(t('settings.logLevel'), select(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(value => ({value, label: value})), values().log_level, {name: 'log_level'})),
     ),
@@ -297,8 +304,6 @@ export async function render(ctx) {
     field(t('settings.dataDirectory'), input('text', values().data_dir, {readOnly: true}), t('settings.readOnlyHint')),
     field(t('settings.database'), input('text', values().database_url || '', {readOnly: true})),
   ], data => report(generalStatus, () => save({
-    default_budget_limit: num(data, 'default_budget_limit', true),
-    confirm_threshold: num(data, 'confirm_threshold'),
     log_format: String(data.get('log_format')),
     log_level: String(data.get('log_level')),
     job_timeout_seconds: num(data, 'job_timeout_seconds'),
