@@ -66,13 +66,22 @@ def test_project_upload_assets_and_audited_consent(api):
 
     image_path = upload(client, "../../front.PNG", b"image")
     audio_path = upload(client, "C:\\samples\\voice.wav", b"audio")
-    character_response = client.post("/characters", json={
-        "name": "Actor", "reference_images": {"front": image_path},
-        "appearance_prompt": "An original illustrated actor",
-    })
-    voice_response = client.post("/voices", json={
-        "name": "Voice", "sample_paths": [audio_path], "engine": "fake",
-    })
+    character_response = client.post(
+        "/characters",
+        json={
+            "name": "Actor",
+            "reference_images": {"front": image_path},
+            "appearance_prompt": "An original illustrated actor",
+        },
+    )
+    voice_response = client.post(
+        "/voices",
+        json={
+            "name": "Voice",
+            "sample_paths": [audio_path],
+            "engine": "fake",
+        },
+    )
     assert character_response.status_code == voice_response.status_code == 201
     character, voice = character_response.json(), voice_response.json()
     assert not character["consent_confirmed"]
@@ -161,11 +170,17 @@ def test_jobs_and_events_read_persisted_terminal_state(api):
         assert "event: job_finished" in response.text
         assert completed_id in response.text
         assert queued_id not in response.text and foreign_id not in response.text
-        data = [line.removeprefix("data: ") for line in response.text.splitlines()
-                if line.startswith("data: ")]
+        data = [
+            line.removeprefix("data: ")
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
         assert json.loads(data[0])["status"] == "succeeded"
-        event_id = next(line.removeprefix("id: ") for line in response.text.splitlines()
-                        if line.startswith("id: "))
+        event_id = next(
+            line.removeprefix("id: ")
+            for line in response.text.splitlines()
+            if line.startswith("id: ")
+        )
         resumed = restarted.get(
             f"/projects/{project['id']}/events?once=true", headers={"Last-Event-ID": event_id}
         )
@@ -204,13 +219,24 @@ def test_media_and_asset_inputs_reject_traversal_and_private_files(api):
     assert client.get(f"/media/{image}").content == b"image"
     (runtime.settings.data_dir / ".env").write_text("secret=value", encoding="utf-8")
     (runtime.settings.data_dir.parent / "private.mp4").write_bytes(b"private")
-    for path in ("state.db", ".env", "%2e%2e/private.mp4", "%2e%2e%5cprivate.mp4",
-                 "C:/Windows/private.mp4", "/private.mp4"):
+    for path in (
+        "state.db",
+        ".env",
+        "%2e%2e/private.mp4",
+        "%2e%2e%5cprivate.mp4",
+        "C:/Windows/private.mp4",
+        "/private.mp4",
+    ):
         assert client.get(f"/media/{path}").status_code == 404, path
     for path in ("../private.mp4", str(runtime.settings.data_dir / image)):
-        response = client.post("/characters", json={
-            "name": "Actor", "reference_images": {"front": path}, "appearance_prompt": "Actor",
-        })
+        response = client.post(
+            "/characters",
+            json={
+                "name": "Actor",
+                "reference_images": {"front": path},
+                "appearance_prompt": "Actor",
+            },
+        )
         assert response.status_code == 404
 
 
@@ -233,7 +259,10 @@ def test_validation_and_unknown_project_routes(api):
     for suffix in ("status", "jobs", "chat", "events?once=true"):
         assert client.get(f"/projects/missing/{suffix}").status_code == 404
     assert client.post("/projects/missing/chat", json={"message": "Hello"}).status_code == 404
-    assert client.post("/projects/missing/source", files={"file": ("a.mp4", b"video")}).status_code == 404
+    assert (
+        client.post("/projects/missing/source", files={"file": ("a.mp4", b"video")}).status_code
+        == 404
+    )
     project = make_project(client)
     assert client.post(f"/projects/{project['id']}/chat", json={"message": ""}).status_code == 422
 
@@ -249,7 +278,9 @@ def test_replacing_source_invalidates_existing_analysis(api):
         repo.record_version(analysis, {"template": "old.json"})
         session.commit()
         analysis_id = analysis.id
-    response = client.post(f"/projects/{project['id']}/source", files={"file": ("new.mp4", b"video")})
+    response = client.post(
+        f"/projects/{project['id']}/source", files={"file": ("new.mp4", b"video")}
+    )
     assert response.status_code == 201
     with runtime.session_factory() as session:
         assert session.get(Project, project["id"]).analysis_result is None
@@ -273,9 +304,13 @@ def test_review_and_budget_approvals_are_explicit_and_become_stale(api):
     assert response.status_code == 200 and response.json()["approved"]
     status = client.get(f"/projects/{project_id}/status").json()
     assert status["reviews"]["structure"]["approved"]
-    response = client.post(f"/projects/{project_id}/approve-budget", json={
-        "amount": 2.5, "approved_by": "Owner",
-    })
+    response = client.post(
+        f"/projects/{project_id}/approve-budget",
+        json={
+            "amount": 2.5,
+            "approved_by": "Owner",
+        },
+    )
     assert response.status_code == 200
     assert response.json() == {"stage": "budget", "approved": True, "amount": 2.5}
     with runtime.session_factory() as session:
@@ -286,3 +321,49 @@ def test_review_and_budget_approvals_are_explicit_and_become_stale(api):
         session.commit()
     status = client.get(f"/projects/{project_id}/status").json()
     assert not status["reviews"]["structure"]["approved"]
+
+
+def test_generated_character_sheet_is_queued_and_requires_human_consent(api, monkeypatch):
+    from avd.backends.image import OpenAIImageBackend
+    from avd.jobs import JobStatus, Worker
+
+    client, runtime, _ = api
+    project = make_project(client)
+    runtime.settings.job_estimated_costs["image_gen"] = 0.05
+
+    def generate(self, *, prompt, reference_images, output_path, model):
+        assert not reference_images
+        output_path.write_bytes(b"fake generated image")
+        return output_path
+
+    monkeypatch.setattr(OpenAIImageBackend, "generate", generate)
+    response = client.post(
+        f"/projects/{project['id']}/character-sheet",
+        json={
+            "name": "Fictional gardener",
+            "appearance_prompt": "An original illustrated gardener",
+        },
+    )
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    Worker(
+        runtime.queue, "api", runtime.build_registry(), on_finished=runtime.on_finished
+    ).run_once()
+    job = runtime.queue.get(job_id)
+    assert job.status == JobStatus.SUCCEEDED
+    character_id = job.result["character_id"]
+    asset = next(value for value in client.get("/characters").json() if value["id"] == character_id)
+    assert asset["consent_confirmed"] is False
+    assert (
+        client.get("/media/" + asset["reference_images"]["front"]).content
+        == b"fake generated image"
+    )
+    assert (
+        client.post(f"/characters/{character_id}/consent", json={"confirmed_by": "human"}).json()[
+            "consent_confirmed"
+        ]
+        is True
+    )
+    assert client.get(f"/projects/{project['id']}/status").json()["spent"] == pytest.approx(0.05)
+    runtime.on_finished(job)
+    assert client.get(f"/projects/{project['id']}/status").json()["spent"] == pytest.approx(0.05)

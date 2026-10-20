@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 from .consent import require_usable
 from .models import Character, Node, NodeKind, NodeStatus, Project, Version, Voice
 
-
 _KIND_ORDER: tuple[str, ...] = (
     "analysis",
     "script",
@@ -53,7 +52,7 @@ def _node_sort_key(node: Node) -> tuple[int, int, str, str]:
 class ProjectRepo:
     """Repository for projects, nodes, dependencies, and immutable versions."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session) -> None:
         self.session = session
 
     # ------------------------------------------------------------------
@@ -72,9 +71,7 @@ class ProjectRepo:
             title=title,
             source_video_path=source_video_path,
             analysis_result=(
-                copy.deepcopy(dict(analysis_result))
-                if analysis_result is not None
-                else None
+                copy.deepcopy(dict(analysis_result)) if analysis_result is not None else None
             ),
             budget_limit=budget_limit,
         )
@@ -100,18 +97,27 @@ class ProjectRepo:
         project.voice_id = voice.id
         for node in project.nodes:
             if character_changed and node.kind == NodeKind.SHOT_FRAME:
-                self.update_recipe(node, {
-                    "character_id": character.id,
-                    "reference_images": copy.deepcopy(character.reference_images),
-                    "appearance_prompt": character.fixed_appearance_prompt,
-                    "lora_path": character.lora_path,
-                })
+                self.update_recipe(
+                    node,
+                    {
+                        "character_id": character.id,
+                        "reference_images": copy.deepcopy(character.reference_images),
+                        "appearance_prompt": character.fixed_appearance_prompt,
+                        "lora_path": character.lora_path,
+                    },
+                )
             if voice_changed and node.kind == NodeKind.VOICEOVER:
-                self.update_recipe(node, {
-                    "voice_id": voice.id, "sample_audio_paths": copy.deepcopy(voice.sample_audio_paths),
-                    "default_params": copy.deepcopy(voice.default_params), "engine": voice.engine,
-                    "engine_voice_id": voice.engine_voice_id, "model_path": voice.model_path,
-                })
+                self.update_recipe(
+                    node,
+                    {
+                        "voice_id": voice.id,
+                        "sample_audio_paths": copy.deepcopy(voice.sample_audio_paths),
+                        "default_params": copy.deepcopy(voice.default_params),
+                        "engine": voice.engine,
+                        "engine_voice_id": voice.engine_voice_id,
+                        "model_path": voice.model_path,
+                    },
+                )
         self.session.flush()
         return project
 
@@ -357,26 +363,21 @@ class ProjectRepo:
         while ready:
             current = ready.pop(0)
             ordered.append(current)
-            for child_id in sorted(outgoing[str(current.id)], key=lambda item: _node_sort_key(by_id[item])):
+            for child_id in sorted(
+                outgoing[str(current.id)], key=lambda item: _node_sort_key(by_id[item])
+            ):
                 indegree[child_id] -= 1
                 if indegree[child_id] == 0:
                     ready.append(by_id[child_id])
                     ready.sort(key=_node_sort_key)
 
         if len(ordered) != len(nodes):
-            cycle_ids = sorted(
-                node_id for node_id, degree in indegree.items() if degree > 0
-            )
+            cycle_ids = sorted(node_id for node_id, degree in indegree.items() if degree > 0)
             raise ValueError(
-                "Dependency cycle detected in project "
-                f"{project.id}: {', '.join(cycle_ids)}"
+                f"Dependency cycle detected in project {project.id}: {', '.join(cycle_ids)}"
             )
 
-        return [
-            node
-            for node in ordered
-            if node.status == NodeStatus.DIRTY
-        ]
+        return [node for node in ordered if node.status == NodeStatus.DIRTY]
 
     # ------------------------------------------------------------------
     # Version restoration and inspection
@@ -391,29 +392,80 @@ class ProjectRepo:
             )
         )
         if version is None:
-            raise ValueError(
-                f"Version {version_number} does not exist for node {node.id}"
-            )
+            raise ValueError(f"Version {version_number} does not exist for node {node.id}")
 
         node.recipe = copy.deepcopy(dict(version.recipe_snapshot or {}))
         node.current_version = version
         node.current_version_id = version.id
         node.status = NodeStatus.CLEAN
+        if node.kind == NodeKind.SCRIPT:
+            self._restore_shot_recipes(node)
+        elif node.kind == NodeKind.VOICEOVER:
+            self._restore_storyboard_line(node)
+        elif node.kind == NodeKind.ANALYSIS:
+            template = node.recipe.get("template")
+            node.project.analysis_result = (
+                copy.deepcopy(template) if isinstance(template, dict) else None
+            )
         self._mark_dependents_dirty(node)
         self.session.flush()
         return version
+
+    def _restore_shot_recipes(self, script: Node) -> None:
+        """Materialize restored authoring fields without altering asset selections."""
+
+        shots = script.recipe.get("shots")
+        if not isinstance(shots, list):
+            return
+        by_index = {shot.get("index"): shot for shot in shots if isinstance(shot, dict)}
+        fields = {
+            NodeKind.SHOT_FRAME: ("visual_prompt",),
+            NodeKind.SHOT_VIDEO: ("camera", "duration_s"),
+            NodeKind.VOICEOVER: ("line", "emotion"),
+        }
+        for target in script.project.nodes:
+            shot = by_index.get(target.shot_index)
+            if shot is None or target.kind not in fields:
+                continue
+            patch = {key: copy.deepcopy(shot[key]) for key in fields[target.kind] if key in shot}
+            if any(target.recipe.get(key) != value for key, value in patch.items()):
+                self.update_recipe(target, patch)
+
+    def _restore_storyboard_line(self, voiceover: Node) -> None:
+        """Publish a readable script snapshot while leaving other shot chains alone."""
+
+        scripts = [node for node in voiceover.project.nodes if node.kind == NodeKind.SCRIPT]
+        if len(scripts) != 1 or voiceover.shot_index is None:
+            return
+        script = scripts[0]
+        recipe = copy.deepcopy(script.recipe)
+        shots = recipe.get("shots")
+        if not isinstance(shots, list):
+            return
+        for shot in shots:
+            if not isinstance(shot, dict) or shot.get("index") != voiceover.shot_index:
+                continue
+            patch = {
+                key: copy.deepcopy(voiceover.recipe[key])
+                for key in ("line", "emotion")
+                if key in voiceover.recipe
+            }
+            if any(shot.get(key) != value for key, value in patch.items()):
+                shot.update(patch)
+                script.recipe = recipe
+                self.record_version(
+                    script, {}, note=f"Restore shot {voiceover.shot_index} voiceover"
+                )
+            break
 
     def list_versions(self, node: Node) -> list[Version]:
         """List immutable versions in ascending version-number order."""
 
         return list(
             self.session.scalars(
-                select(Version)
-                .where(Version.node_id == node.id)
-                .order_by(Version.number.asc())
+                select(Version).where(Version.node_id == node.id).order_by(Version.number.asc())
             ).all()
         )
 
 
 __all__ = ["ProjectRepo"]
-

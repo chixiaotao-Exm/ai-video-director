@@ -12,8 +12,12 @@ from typing import Any, Protocol
 
 class ImageBackend(Protocol):
     def generate(
-        self, *, prompt: str, reference_images: Sequence[Path],
-        output_path: Path, model: str,
+        self,
+        *,
+        prompt: str,
+        reference_images: Sequence[Path],
+        output_path: Path,
+        model: str,
     ) -> Path: ...
 
 
@@ -25,8 +29,11 @@ class OpenAIImageBackend:
     """
 
     def __init__(
-        self, api_key: str | None = None, base_url: str | None = None,
-        *, client: Any = None,
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        *,
+        client: Any = None,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url
@@ -44,8 +51,12 @@ class OpenAIImageBackend:
         return self._client
 
     def generate(
-        self, *, prompt: str, reference_images: Sequence[Path],
-        output_path: Path, model: str,
+        self,
+        *,
+        prompt: str,
+        reference_images: Sequence[Path],
+        output_path: Path,
+        model: str,
     ) -> Path:
         if not prompt.strip() or not model.strip():
             raise ValueError("Image generation requires a prompt and configured model")

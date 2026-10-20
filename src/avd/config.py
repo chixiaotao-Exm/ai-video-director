@@ -49,9 +49,7 @@ class Settings(BaseSettings):
 
     data_dir: Path = Path("./data")
     database_url: str | None = None
-    comfyui_profiles: dict[str, ComfyUIProfile] = Field(
-        default_factory=_default_comfyui_profiles
-    )
+    comfyui_profiles: dict[str, ComfyUIProfile] = Field(default_factory=_default_comfyui_profiles)
     comfyui_active_profile: str = "local"
     director_model: str = "claude-opus-5-5"
     script_model: str = "gpt-6.1-sol"
@@ -72,6 +70,11 @@ class Settings(BaseSettings):
     job_estimated_costs: dict[str, float] = Field(default_factory=dict)
     llm_max_output_tokens: int = Field(default=4096, gt=0)
     max_upload_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
+    comfyui_url: str | None = None
+    smoke_workflow: Path | None = None
+    smoke_image_prompt: str | None = None
+    smoke_image_reference: Path | None = None
+    smoke_media_video: Path | None = None
 
     model_config = SettingsConfigDict(
         env_prefix="AVD_",

@@ -62,7 +62,14 @@ def probe(video: Path | str) -> MediaInfo:
             fps=_fps(video_stream),
             has_audio=any(stream.get("codec_type") == "audio" for stream in streams),
         )
-    except (KeyError, TypeError, ValueError, StopIteration, ZeroDivisionError, ValidationError) as exc:
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        StopIteration,
+        ZeroDivisionError,
+        ValidationError,
+    ) as exc:
         raise MediaProcessingError(f"Invalid or missing video metadata for {video}: {exc}") from exc
 
 
@@ -77,9 +84,25 @@ def extract_audio(video: Path | str, output_path: Path | str | None = None) -> P
     output.parent.mkdir(parents=True, exist_ok=True)
     _run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-n", "-i", str(source),
-            "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
-            "-f", "wav", str(output),
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-n",
+            "-i",
+            str(source),
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "wav",
+            str(output),
         ],
         timeout=600,
     )

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from copy import deepcopy
-import json
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +10,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from avd.agents.analysis import AnalysisPipeline, MediaInfo, Segment, ShotSpan, StructureTemplate, understand
+from avd.agents.analysis import (
+    AnalysisPipeline,
+    MediaInfo,
+    Segment,
+    ShotSpan,
+    StructureTemplate,
+    understand,
+)
 from avd.config import ModelPrice, Settings
 from avd.llm import ChatResponse, CostLedger, FakeProvider, LLMRouter
 from avd.state.db import create_engine, create_session_factory, init_db
@@ -31,13 +38,15 @@ def template(hook: str = "Open with an intriguing question") -> StructureTemplat
     return StructureTemplate(
         total_duration_s=3,
         hook=hook,
-        shots=[{
-            "duration_s": 3,
-            "shot_size": "medium",
-            "camera_move": "slow push in",
-            "visual_description": "A presenter centered against a plain background",
-            "spoken_line_purpose": "Introduce a surprising problem",
-        }],
+        shots=[
+            {
+                "duration_s": 3,
+                "shot_size": "medium",
+                "camera_move": "slow push in",
+                "visual_description": "A presenter centered against a plain background",
+                "spoken_line_purpose": "Introduce a surprising problem",
+            }
+        ],
         pacing_notes="One direct opening beat",
         music_style="Quiet ambient bed",
         voice_style="Calm explanatory delivery",
@@ -62,7 +71,9 @@ def make_pipeline(
     repo = ProjectRepo(session)
     project = repo.create_project("Analysis", source_video_path="reference.mp4", budget_limit=10)
     fake = FakeProvider(responses)
-    router = LLMRouter(settings, providers={"gemini": fake}, ledger=CostLedger(session, settings.model_prices))
+    router = LLMRouter(
+        settings, providers={"gemini": fake}, ledger=CostLedger(session, settings.model_prices)
+    )
     calls: list[str] = []
 
     def probe(video: Path) -> MediaInfo:
@@ -88,7 +99,9 @@ def make_pipeline(
         return [Segment(start_s=0, end_s=3, text="A source sentence")]
 
     pipeline = AnalysisPipeline(
-        repo, router, settings,
+        repo,
+        router,
+        settings,
         probe_step=probe,
         detect_shots_step=detect,
         extract_audio_step=extract,
@@ -115,16 +128,21 @@ def test_understand_sends_video_and_structure_only_prompt(tmp_path: Path) -> Non
     assert "structure and style only" in messages[0]["content"]
     assert "never reproduce the verbatim line" in messages[0]["content"]
     assert messages[1]["content"][1] == {
-        "type": "video", "path": str(video.resolve()), "mime_type": "video/mp4"
+        "type": "video",
+        "path": str(video.resolve()),
+        "mime_type": "video/mp4",
     }
     assert "source words" in messages[1]["content"][0]["text"]
 
 
-def test_pipeline_publishes_versions_and_keeps_prior_files(tmp_path: Path, session: Session) -> None:
+def test_pipeline_publishes_versions_and_keeps_prior_files(
+    tmp_path: Path, session: Session
+) -> None:
     first = template()
     second = template("Open with a visual contrast")
     pipeline, project, _, calls = make_pipeline(
-        tmp_path, session,
+        tmp_path,
+        session,
         [ChatResponse(content=first.model_dump_json(), input_tokens=100), second.model_dump_json()],
     )
     assert pipeline.analyze_video(project) == first
@@ -150,7 +168,10 @@ def test_pipeline_publishes_versions_and_keeps_prior_files(tmp_path: Path, sessi
     session.commit()
     session.expire_all()
     assert project.analysis_result == second.model_dump(mode="json")
-    assert json.loads((tmp_path / versions[1].output_paths["template"]).read_text()) == project.analysis_result
+    assert (
+        json.loads((tmp_path / versions[1].output_paths["template"]).read_text())
+        == project.analysis_result
+    )
 
 
 def test_silent_video_skips_audio_and_transcription(tmp_path: Path, session: Session) -> None:
@@ -190,8 +211,12 @@ def test_publish_failure_rolls_back_result_but_retains_paid_call(
     tmp_path: Path, session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pipeline, project, _, _ = make_pipeline(
-        tmp_path, session,
-        [template().model_dump_json(), ChatResponse(content=template("New hook").model_dump_json(), input_tokens=50)],
+        tmp_path,
+        session,
+        [
+            template().model_dump_json(),
+            ChatResponse(content=template("New hook").model_dump_json(), input_tokens=50),
+        ],
     )
     pipeline.analyze_video(project)
     node = session.scalar(select(Node).where(Node.kind == NodeKind.ANALYSIS))

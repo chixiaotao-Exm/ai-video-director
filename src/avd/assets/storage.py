@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
-import shutil
+import os
+import tempfile
 from os import PathLike
+from pathlib import Path
+
+from avd.state.paths import relative_path
 
 
 class UnsupportedAssetError(ValueError):
@@ -18,7 +21,7 @@ class AssetStorage:
     IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
     AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".flac", ".m4a"})
 
-    def __init__(self, data_dir: str | PathLike[str]):
+    def __init__(self, data_dir: str | PathLike[str]) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
 
     def validate_source(
@@ -49,16 +52,35 @@ class AssetStorage:
     ) -> str:
         """Store one image/audio file and return its data-relative POSIX path."""
 
+        identifier = relative_path(str(asset_id))
+        if identifier != str(asset_id) or "/" in identifier:
+            raise ValueError("asset_id must be a single path component")
         source = self.validate_source(source_path, category)
         content = source.read_bytes()
         digest = hashlib.sha256(content).hexdigest()
         category_name = self._category_name(category)
         suffix = source.suffix.lower()
-        destination_dir = self.data_dir / "assets" / category_name / str(asset_id)
+        destination_dir = (self.data_dir / "assets" / category_name / identifier).resolve()
+        if not destination_dir.is_relative_to(self.data_dir):
+            raise ValueError("Asset destination must stay under data_dir")
         destination_dir.mkdir(parents=True, exist_ok=True)
         destination = destination_dir / f"{digest}{suffix}"
-        if not destination.exists():
-            shutil.copyfile(source, destination)
+        # Publish complete captured bytes with an atomic, exclusive hard link.
+        # A source modified after read_bytes cannot change the hashed content.
+        with tempfile.NamedTemporaryFile(dir=destination_dir, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                pass
+            if destination.is_symlink() or destination.read_bytes() != content:
+                raise ValueError("Stored asset content does not match its content hash")
+        finally:
+            temporary.unlink()
         return destination.relative_to(self.data_dir).as_posix()
 
     def store_character_image(

@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from avd.state.consent import Asset, ConsentRequiredError, require_usable
-from avd.state.models import Character, Voice
+from avd.state.models import Character, NodeKind, Voice
+from avd.state.repo import ProjectRepo
 
 from .storage import AssetStorage
 
@@ -23,7 +24,7 @@ class AssetLibrary:
 
     CHARACTER_VIEWS = frozenset({"front", "side", "half", "full"})
 
-    def __init__(self, session: Session, storage: AssetStorage):
+    def __init__(self, session: Session, storage: AssetStorage) -> None:
         self.session = session
         self.storage = storage
 
@@ -111,29 +112,28 @@ class AssetLibrary:
 
     def list_characters(self) -> list[Character]:
         return list(
-            self.session.scalars(
-                select(Character).order_by(Character.name, Character.id)
-            ).all()
+            self.session.scalars(select(Character).order_by(Character.name, Character.id)).all()
         )
 
     def list_voices(self) -> list[Voice]:
-        return list(
-            self.session.scalars(select(Voice).order_by(Voice.name, Voice.id)).all()
-        )
+        return list(self.session.scalars(select(Voice).order_by(Voice.name, Voice.id)).all())
 
     def update_character_prompt(
         self,
         character: Character | str,
         appearance_prompt: str,
     ) -> Character:
-        resolved = (
-            character
-            if isinstance(character, Character)
-            else self.get_character(character)
-        )
+        resolved = character if isinstance(character, Character) else self.get_character(character)
         if resolved is None:
             raise LookupError(f"Character {character!r} was not found")
+        if resolved.fixed_appearance_prompt == appearance_prompt:
+            return resolved
         resolved.fixed_appearance_prompt = appearance_prompt
+        repo = ProjectRepo(self.session)
+        for project in resolved.projects:
+            for node in project.nodes:
+                if node.kind == NodeKind.SHOT_FRAME:
+                    repo.update_recipe(node, {"appearance_prompt": appearance_prompt})
         self.session.flush()
         return resolved
 

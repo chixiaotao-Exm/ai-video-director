@@ -81,3 +81,10 @@
 - Packaged static files; documented full setup/workflow and supplied a small worker runner alongside uvicorn.
 - Verified local page layout in the in-app browser, static/API contracts, and JavaScript syntax.
 - Tests: 248 passed, 3 skipped; one upstream Starlette/httpx deprecation warning remains for T11 review.
+
+## T11 — quality and integrity pass
+
+- Added Ruff lint/format, strict mypy for state/jobs/engine, normal typing elsewhere, and portable check scripts.
+- Audited all SPEC sections; fixed database immutability/path constraints, atomic asset storage, revert consistency, GPU leases/fencing, detached sessions, cancellation/retry, cost durability, model/workflow cache snapshots and review/budget bypasses.
+- Added fictional character-sheet creation/review, centralized image routing and consistent smoke configuration/accounting.
+- Verification: 381 tests passed, 3 skipped; Ruff and mypy green. Remaining environment/service requirements and the upstream TestClient warning are listed in REVIEW.md.

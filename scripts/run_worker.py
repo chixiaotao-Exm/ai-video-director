@@ -12,7 +12,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane", choices=["gpu", "api", "cpu"], required=True)
     parser.add_argument("--once", action="store_true")
-    parser.add_argument("--recover-stale", action="store_true", help="Use only after previous workers have stopped")
+    parser.add_argument(
+        "--recover-stale", action="store_true", help="Use only after previous workers have stopped"
+    )
     args = parser.parse_args()
     runtime = Runtime()
     stop = Event()
@@ -20,8 +22,13 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     try:
         if args.recover_stale:
-            runtime.queue.recover_stale()
-        worker = Worker(runtime.queue, args.lane, runtime.build_registry(), on_finished=runtime.engine.on_finished)
+            runtime.queue.recover_stale(force=True)
+        worker = Worker(
+            runtime.queue,
+            args.lane,
+            runtime.build_registry(),
+            on_finished=runtime.on_finished,
+        )
         if args.once:
             worker.run_once()
         else:

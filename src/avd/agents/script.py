@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -57,19 +57,30 @@ def write_storyboard(
         raise ValueError("A creative brief is required")
     context = {
         "structure": template.model_dump(mode="json"),
-        "character": {"name": character.name, "appearance_prompt": character.fixed_appearance_prompt},
+        "character": {
+            "name": character.name,
+            "appearance_prompt": character.fixed_appearance_prompt,
+        },
         "voice": {"name": voice.name, "default_params": voice.default_params},
         "brief": brief,
     }
-    return router.structured("script", [
-        {"role": "system", "content": (
-            "Write an original storyboard using only the supplied reference structure and style. "
-            "Use the separately consented character and voice. Never copy the source person's "
-            "identity, face, voice or verbatim lines. Use contiguous shot indexes starting at 1. "
-            "The user must review this draft before any frames are generated."
-        )},
-        {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
-    ], Storyboard, project=project)
+    return router.structured(
+        "script",
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Write an original storyboard using only the supplied reference structure and style. "
+                    "Use the separately consented character and voice. Never copy the source person's "
+                    "identity, face, voice or verbatim lines. Use contiguous shot indexes starting at 1. "
+                    "The user must review this draft before any frames are generated."
+                ),
+            },
+            {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+        ],
+        Storyboard,
+        project=project,
+    )
 
 
 class ScriptAgent:
@@ -81,13 +92,22 @@ class ScriptAgent:
         self.settings = settings or router.settings
 
     def write_storyboard(
-        self, template: StructureTemplate, character: Character, voice: Voice, brief: str,
-        *, project: Project | None = None,
+        self,
+        template: StructureTemplate,
+        character: Character,
+        voice: Voice,
+        brief: str,
+        *,
+        project: Project | None = None,
     ) -> Storyboard:
-        return write_storyboard(template, character, voice, brief, router=self.router, project=project)
+        return write_storyboard(
+            template, character, voice, brief, router=self.router, project=project
+        )
 
-    def apply_storyboard(self, project: Project, storyboard: Storyboard) -> dict[str, Any]:
-        return apply_storyboard(project, storyboard, repo=self.repo)
+    def apply_storyboard(
+        self, project: Project, storyboard: Storyboard, *, cost: float = 0.0
+    ) -> dict[str, Any]:
+        return apply_storyboard(project, storyboard, repo=self.repo, cost=cost)
 
     def update_shot(self, project: Project, shot_index: int, changes: dict[str, Any]) -> list[Node]:
         return update_shot(project, shot_index, changes, repo=self.repo)
@@ -110,8 +130,13 @@ def _existing_graph(project: Project, count: int) -> dict[str, Any] | None:
     if len(scripts) != 1:
         raise ValueError("Project must have one shared script node")
     graph: dict[str, Any] = {"script": scripts[0]}
-    for kind in (NodeKind.SHOT_FRAME, NodeKind.SHOT_VIDEO, NodeKind.VOICEOVER,
-                 NodeKind.LIPSYNC, NodeKind.SUBTITLES):
+    for kind in (
+        NodeKind.SHOT_FRAME,
+        NodeKind.SHOT_VIDEO,
+        NodeKind.VOICEOVER,
+        NodeKind.LIPSYNC,
+        NodeKind.SUBTITLES,
+    ):
         nodes = sorted(
             (node for node in project.nodes if node.kind == kind),
             key=lambda node: node.shot_index or 0,
@@ -127,7 +152,7 @@ def _existing_graph(project: Project, count: int) -> dict[str, Any] | None:
 
 
 def apply_storyboard(
-    project: Project, storyboard: Storyboard, *, repo: ProjectRepo
+    project: Project, storyboard: Storyboard, *, repo: ProjectRepo, cost: float = 0.0
 ) -> dict[str, Any]:
     """Build/update a stable shot graph without deleting any prior version."""
 
@@ -143,24 +168,40 @@ def apply_storyboard(
                 script.depends_on.append(analysis)
         script.recipe = storyboard.model_dump(mode="json")
         for offset, shot in enumerate(storyboard.shots):
-            _update_changed(repo, graph["shot_frame"][offset], {
-                "visual_prompt": shot.visual_prompt,
-                "character_id": character.id,
-                "reference_images": deepcopy(character.reference_images),
-                "appearance_prompt": character.fixed_appearance_prompt,
-                "lora_path": character.lora_path,
-            })
-            _update_changed(repo, graph["voiceover"][offset], {
-                "line": shot.line, "emotion": shot.emotion,
-                "voice_id": voice.id, "default_params": deepcopy(voice.default_params),
-                "sample_audio_paths": deepcopy(voice.sample_audio_paths),
-                "engine": voice.engine, "engine_voice_id": voice.engine_voice_id,
-                "model_path": voice.model_path,
-            })
-            _update_changed(repo, graph["shot_video"][offset], {
-                "camera": shot.camera, "duration_s": shot.duration_s,
-            })
-        repo.record_version(script, {}, note="Storyboard draft")
+            _update_changed(
+                repo,
+                graph["shot_frame"][offset],
+                {
+                    "visual_prompt": shot.visual_prompt,
+                    "character_id": character.id,
+                    "reference_images": deepcopy(character.reference_images),
+                    "appearance_prompt": character.fixed_appearance_prompt,
+                    "lora_path": character.lora_path,
+                },
+            )
+            _update_changed(
+                repo,
+                graph["voiceover"][offset],
+                {
+                    "line": shot.line,
+                    "emotion": shot.emotion,
+                    "voice_id": voice.id,
+                    "default_params": deepcopy(voice.default_params),
+                    "sample_audio_paths": deepcopy(voice.sample_audio_paths),
+                    "engine": voice.engine,
+                    "engine_voice_id": voice.engine_voice_id,
+                    "model_path": voice.model_path,
+                },
+            )
+            _update_changed(
+                repo,
+                graph["shot_video"][offset],
+                {
+                    "camera": shot.camera,
+                    "duration_s": shot.duration_s,
+                },
+            )
+        repo.record_version(script, {}, cost=cost, note="Storyboard draft")
         repo.session.flush()
     return graph
 
@@ -177,7 +218,9 @@ def update_shot(
 
     allowed = {"line", "emotion", "visual_prompt", "camera", "duration_s"}
     if not changes or set(changes) - allowed:
-        raise ValueError("Shot changes must contain only line/emotion/visual_prompt/camera/duration_s")
+        raise ValueError(
+            "Shot changes must contain only line/emotion/visual_prompt/camera/duration_s"
+        )
     scripts = [node for node in project.nodes if node.kind == NodeKind.SCRIPT]
     if len(scripts) != 1:
         raise ValueError("Project has no unique storyboard")
@@ -208,4 +251,11 @@ def update_shot(
     return changed_nodes
 
 
-__all__ = ["Storyboard", "StoryboardShot", "ScriptAgent", "write_storyboard", "apply_storyboard", "update_shot"]
+__all__ = [
+    "Storyboard",
+    "StoryboardShot",
+    "ScriptAgent",
+    "write_storyboard",
+    "apply_storyboard",
+    "update_shot",
+]

@@ -16,7 +16,9 @@ from avd.agents.analysis import media, steps
 from avd.agents.analysis.models import MediaInfo, Segment, ShotSpan, StructureTemplate
 
 
-def test_probe_reads_fractional_rate_and_container_duration(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_probe_reads_fractional_rate_and_container_duration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     payload = {
         "streams": [
             {"codec_type": "audio"},
@@ -40,9 +42,13 @@ def test_probe_reads_fractional_rate_and_container_duration(monkeypatch: pytest.
     assert "shell" not in calls[0][1]
 
 
-@pytest.mark.parametrize("payload", ["garbage", '{}', '{"streams": []}', '{"streams": null}'])
-def test_probe_rejects_invalid_video_metadata(monkeypatch: pytest.MonkeyPatch, payload: str) -> None:
-    monkeypatch.setattr(media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=payload))
+@pytest.mark.parametrize("payload", ["garbage", "{}", '{"streams": []}', '{"streams": null}'])
+def test_probe_rejects_invalid_video_metadata(
+    monkeypatch: pytest.MonkeyPatch, payload: str
+) -> None:
+    monkeypatch.setattr(
+        media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=payload)
+    )
     with pytest.raises(media.MediaProcessingError, match="metadata"):
         media.probe("bad.mp4")
 
@@ -55,7 +61,9 @@ def test_probe_rejects_invalid_video_metadata(monkeypatch: pytest.MonkeyPatch, p
         (subprocess.TimeoutExpired(["ffprobe"], 120), "timed out"),
     ],
 )
-def test_probe_reports_tool_failures(monkeypatch: pytest.MonkeyPatch, error: Exception, message: str) -> None:
+def test_probe_reports_tool_failures(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, message: str
+) -> None:
     def fail(*args: Any, **kwargs: Any) -> None:
         raise error
 
@@ -64,7 +72,9 @@ def test_probe_reports_tool_failures(monkeypatch: pytest.MonkeyPatch, error: Exc
         media.probe("bad.mp4")
 
 
-def test_extract_audio_passes_safe_pcm_arguments(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_extract_audio_passes_safe_pcm_arguments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     output = tmp_path / "speech.wav"
     calls: list[list[str]] = []
 
@@ -87,7 +97,9 @@ def test_extract_audio_passes_safe_pcm_arguments(monkeypatch: pytest.MonkeyPatch
         media.extract_audio(output, output)
 
 
-def test_extract_audio_rejects_missing_output(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_extract_audio_rejects_missing_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=""))
     with pytest.raises(media.MediaProcessingError, match="did not produce"):
         media.extract_audio("source.mp4", tmp_path / "missing.wav")
@@ -102,9 +114,16 @@ def test_scene_detection_and_no_cut_fallback(monkeypatch: pytest.MonkeyPatch) ->
         detect=lambda path, detector: [(timecode(0), timecode(1)), (timecode(1), timecode(3))],
     )
     monkeypatch.setitem(sys.modules, "scenedetect", scene_module)
-    assert steps.detect_shots("clip.mp4") == [ShotSpan(start_s=0, end_s=1), ShotSpan(start_s=1, end_s=3)]
+    assert steps.detect_shots("clip.mp4") == [
+        ShotSpan(start_s=0, end_s=1),
+        ShotSpan(start_s=1, end_s=3),
+    ]
     scene_module.detect = lambda path, detector: []
-    monkeypatch.setattr(steps, "probe", lambda path: MediaInfo(duration_s=3, width=16, height=16, fps=25, has_audio=False))
+    monkeypatch.setattr(
+        steps,
+        "probe",
+        lambda path: MediaInfo(duration_s=3, width=16, height=16, fps=25, has_audio=False),
+    )
     assert steps.detect_shots("clip.mp4") == [ShotSpan(start_s=0, end_s=3)]
 
 
@@ -117,11 +136,13 @@ def test_transcribe_uses_fake_sdk_and_model_selection(monkeypatch: pytest.Monkey
 
         def transcribe(self, path: str, **kwargs: Any) -> tuple[Any, None]:
             calls.append((path, kwargs))
-            return iter([
-                SimpleNamespace(start=0, end=1.2, text=" Hello "),
-                SimpleNamespace(start=1.2, end=1.3, text=" "),
-                SimpleNamespace(start=1.3, end=3, text="world"),
-            ]), None
+            return iter(
+                [
+                    SimpleNamespace(start=0, end=1.2, text=" Hello "),
+                    SimpleNamespace(start=1.2, end=1.3, text=" "),
+                    SimpleNamespace(start=1.3, end=3, text="world"),
+                ]
+            ), None
 
     monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisper))
     assert steps.transcribe("audio.wav", "tiny") == [
@@ -132,14 +153,21 @@ def test_transcribe_uses_fake_sdk_and_model_selection(monkeypatch: pytest.Monkey
     assert calls[1][0] == "audio.wav"
 
 
-@pytest.mark.parametrize(("module", "function"), [("scenedetect", steps.detect_shots), ("faster_whisper", steps.transcribe)])
-def test_optional_dependencies_have_clear_errors(monkeypatch: pytest.MonkeyPatch, module: str, function: Any) -> None:
+@pytest.mark.parametrize(
+    ("module", "function"),
+    [("scenedetect", steps.detect_shots), ("faster_whisper", steps.transcribe)],
+)
+def test_optional_dependencies_have_clear_errors(
+    monkeypatch: pytest.MonkeyPatch, module: str, function: Any
+) -> None:
     monkeypatch.setitem(sys.modules, module, None)
     with pytest.raises(RuntimeError, match="analysis.*extra"):
         function("input")
 
 
-@pytest.mark.parametrize(("start", "end"), [(2, 1), (1, 1), (-1, 2), (0, float("inf")), (float("nan"), 1)])
+@pytest.mark.parametrize(
+    ("start", "end"), [(2, 1), (1, 1), (-1, 2), (0, float("inf")), (float("nan"), 1)]
+)
 def test_time_spans_validate_finite_ordered_ranges(start: float, end: float) -> None:
     with pytest.raises(ValidationError):
         ShotSpan(start_s=start, end_s=end)
@@ -148,21 +176,46 @@ def test_time_spans_validate_finite_ordered_ranges(start: float, end: float) -> 
 def test_structure_template_requires_shots_and_finite_duration() -> None:
     with pytest.raises(ValidationError):
         StructureTemplate(
-            total_duration_s=float("inf"), hook="hook", shots=[], pacing_notes="fast",
-            music_style="none", voice_style="neutral",
+            total_duration_s=float("inf"),
+            hook="hook",
+            shots=[],
+            pacing_notes="fast",
+            music_style="none",
+            voice_style="neutral",
         )
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="FFmpeg and ffprobe required")
+@pytest.mark.skipif(
+    not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="FFmpeg and ffprobe required"
+)
 def test_ffmpeg_three_second_clip(tmp_path: Path) -> None:
     video = tmp_path / "three seconds.mp4"
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=25",
-            "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
-            "-t", "3", "-c:v", "mpeg4", "-c:a", "aac", str(video),
-        ], check=True, capture_output=True, timeout=60,
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=160x90:r=25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=16000",
+            "-t",
+            "3",
+            "-c:v",
+            "mpeg4",
+            "-c:a",
+            "aac",
+            str(video),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=60,
     )
     info = media.probe(video)
     assert info.duration_s == pytest.approx(3, abs=0.05)

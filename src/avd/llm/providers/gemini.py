@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import importlib
 import logging
-from pathlib import Path
 import time
-from typing import Any
 import uuid
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
 
 from .base import ChatResponse, ProviderConfigurationError, ToolCall
 
@@ -93,33 +93,57 @@ class GeminiProvider:
                     system.append(str(message.get("content", "")))
                     continue
                 if role == "tool":
-                    parts = [{"function_response": {
-                        "name": message["name"], "response": {"result": message.get("content", "")}
-                    }}]
+                    parts = [
+                        {
+                            "function_response": {
+                                "name": message["name"],
+                                "response": {"result": message.get("content", "")},
+                            }
+                        }
+                    ]
                 else:
                     parts = self._parts(message.get("content", ""), uploaded)
                     parts.extend(
                         {"function_call": {"name": call["name"], "args": call["arguments"]}}
                         for call in message.get("tool_calls", [])
                     )
-                contents.append({"role": "model" if role == "assistant" else "user", "parts": parts})
+                contents.append(
+                    {"role": "model" if role == "assistant" else "user", "parts": parts}
+                )
             config: dict[str, Any] = {"max_output_tokens": self.max_output_tokens}
             if system:
                 config["system_instruction"] = "\n\n".join(system)
             if tools:
-                config["tools"] = [{"function_declarations": [
-                    {"name": tool["name"], "description": tool.get("description", ""), "parameters": tool["input_schema"]}
-                    for tool in tools
-                ]}]
+                config["tools"] = [
+                    {
+                        "function_declarations": [
+                            {
+                                "name": tool["name"],
+                                "description": tool.get("description", ""),
+                                "parameters": tool["input_schema"],
+                            }
+                            for tool in tools
+                        ]
+                    }
+                ]
             result = client.models.generate_content(model=model, contents=contents, config=config)
             candidates = result.candidates or []
-            parts = candidates[0].content.parts if candidates and candidates[0].content else []
+            response_parts: list[Any] = (
+                candidates[0].content.parts if candidates and candidates[0].content else []
+            )
             usage = result.usage_metadata
             return ChatResponse(
-                content="".join(part.text for part in parts if getattr(part, "text", None)),
+                content="".join(
+                    part.text for part in response_parts if getattr(part, "text", None)
+                ),
                 tool_calls=[
-                    ToolCall(id=getattr(part.function_call, "id", None) or str(uuid.uuid4()), name=part.function_call.name, arguments=dict(part.function_call.args or {}))
-                    for part in parts if getattr(part, "function_call", None)
+                    ToolCall(
+                        id=getattr(part.function_call, "id", None) or str(uuid.uuid4()),
+                        name=part.function_call.name,
+                        arguments=dict(part.function_call.args or {}),
+                    )
+                    for part in response_parts
+                    if getattr(part, "function_call", None)
                 ],
                 input_tokens=(usage.prompt_token_count or 0) if usage else 0,
                 output_tokens=(usage.candidates_token_count or 0) if usage else 0,

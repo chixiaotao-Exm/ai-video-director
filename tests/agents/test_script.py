@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from copy import deepcopy
-import json
 from pathlib import Path
 from typing import Any
 
@@ -80,7 +80,10 @@ def make_agent(
     )
     character = Character(
         name="My presenter",
-        reference_images={"front": "assets/presenter/front.png", "side": "assets/presenter/side.png"},
+        reference_images={
+            "front": "assets/presenter/front.png",
+            "side": "assets/presenter/side.png",
+        },
         fixed_appearance_prompt="Short brown hair and a green jacket",
         consent_confirmed=True,
     )
@@ -165,9 +168,12 @@ def test_write_storyboard_repairs_invalid_structured_output(
     agent, project, character, voice, fake = make_agent(
         session, tmp_path, ['{"title": "Broken", "shots": []}', expected.model_dump_json()]
     )
-    assert agent.write_storyboard(
-        structure_template(), character, voice, "A new lesson", project=project
-    ) == expected
+    assert (
+        agent.write_storyboard(
+            structure_template(), character, voice, "A new lesson", project=project
+        )
+        == expected
+    )
     assert len(fake.calls) == 2
 
 
@@ -180,7 +186,9 @@ def test_unconsented_assets_are_refused_before_model_call(
     asset.consent_confirmed = False
     session.flush()
     with pytest.raises(ConsentRequiredError):
-        agent.write_storyboard(structure_template(), character, voice, "A new lesson", project=project)
+        agent.write_storyboard(
+            structure_template(), character, voice, "A new lesson", project=project
+        )
     assert fake.calls == []
 
 
@@ -227,7 +235,10 @@ def test_apply_storyboard_creates_recipes_and_persists_a_clean_script(
     [
         ({"line": "A revised second line"}, {"voiceover", "lipsync", "subtitles", "final"}),
         ({"emotion": "excited"}, {"voiceover", "lipsync", "subtitles", "final"}),
-        ({"visual_prompt": "A bright garden"}, {"shot_frame", "shot_video", "lipsync", "subtitles", "final"}),
+        (
+            {"visual_prompt": "A bright garden"},
+            {"shot_frame", "shot_video", "lipsync", "subtitles", "final"},
+        ),
         ({"camera": "gentle pan"}, {"shot_video", "lipsync", "subtitles", "final"}),
         ({"duration_s": 4.5}, {"shot_video", "lipsync", "subtitles", "final"}),
     ],
@@ -246,7 +257,8 @@ def test_shot_edit_dirties_only_the_required_chain(
             assert snapshot(project)[node.id] == before[node.id]
     assert graph["script"].status == NodeStatus.CLEAN
     assert graph["script"].current_version.recipe_snapshot["shots"][1] == {
-        **old_script["shots"][1], **changes
+        **old_script["shots"][1],
+        **changes,
     }
     assert agent.repo.list_versions(graph["script"])[0].recipe_snapshot == old_script
     session.commit()
@@ -265,7 +277,11 @@ def test_multiple_shot_fields_update_their_respective_recipes(
     assert graph["shot_video"][1].recipe["camera"] == "locked off"
     assert graph["shot_frame"][1].status == NodeStatus.CLEAN
     assert {node.kind for node in agent.repo.plan_rebuild(project)} == {
-        NodeKind.VOICEOVER, NodeKind.SHOT_VIDEO, NodeKind.LIPSYNC, NodeKind.SUBTITLES, NodeKind.FINAL
+        NodeKind.VOICEOVER,
+        NodeKind.SHOT_VIDEO,
+        NodeKind.LIPSYNC,
+        NodeKind.SUBTITLES,
+        NodeKind.FINAL,
     }
 
 
@@ -315,15 +331,16 @@ def test_reapplying_storyboard_preserves_graph_and_immutable_versions(
     for node in project.nodes:
         old_versions = before[node.id]["versions"]
         current_versions = snapshot(project)[node.id]["versions"]
-        assert current_versions[:len(old_versions)] == old_versions
+        assert current_versions[: len(old_versions)] == old_versions
     assert {(node.kind.value, node.shot_index) for node in agent.repo.plan_rebuild(project)} == {
-        ("voiceover", 2), ("lipsync", 2), ("subtitles", 2), ("final", None)
+        ("voiceover", 2),
+        ("lipsync", 2),
+        ("subtitles", 2),
+        ("final", None),
     }
 
 
-def test_reapplying_with_a_different_shot_count_is_atomic(
-    session: Session, tmp_path: Path
-) -> None:
+def test_reapplying_with_a_different_shot_count_is_atomic(session: Session, tmp_path: Path) -> None:
     agent, project, _ = make_clean_graph(session, tmp_path)
     before = snapshot(project)
     with pytest.raises(ValueError):

@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import hashlib
 import json
 import mimetypes
+import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-import uuid
 
 from sqlalchemy import select
 
 from avd.config import Settings
 from avd.llm import CostLedger, LLMRouter
 from avd.state.models import Node, NodeKind, Project
+from avd.state.paths import relative_path
 from avd.state.repo import ProjectRepo
 
 from .models import MediaInfo, Segment, ShotSpan, StructureTemplate
@@ -103,9 +104,7 @@ class AnalysisPipeline:
     def _source(self, project: Project) -> Path:
         if not project.source_video_path:
             raise ValueError("Project has no source video")
-        relative = Path(project.source_video_path)
-        if relative.is_absolute() or ".." in relative.parts:
-            raise ValueError("Source video must be a relative path under data_dir")
+        relative = Path(relative_path(project.source_video_path))
         root = self.settings.data_dir.expanduser().resolve()
         source = (root / relative).resolve()
         if not source.is_relative_to(root):
@@ -168,6 +167,7 @@ class AnalysisPipeline:
             "whisper_model": self.settings.whisper_model,
             "provider": route.provider,
             "model": route.model,
+            "template": template.model_dump(mode="json"),
         }
         # Paid calls above retain their ledger entries even if the publication
         # transaction fails. Only the final state change uses this savepoint.

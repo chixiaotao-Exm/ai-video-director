@@ -93,3 +93,17 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Separate frontend framework/build server; rejected for this minimal local UI.
 - **Decision:** Use SSE completion events plus a four-second status refresh to show both completion and queued/running progress. Human review/consent/budget inputs use explicit forms and are never auto-checked.
 - **Alternatives:** Only poll or automatically confirm; rejected for responsiveness and approval correctness.
+
+## T11
+
+- **Date:** 2026-10-20
+- **Decision:** Enforce immutable versions in both ORM and SQLite triggers, and preserve audit records by rejecting destructive cascades. Apply only known additive nullable schema upgrades to existing SQLite databases.
+- **Alternatives:** Trust callers or recreate databases; rejected because both can lose project history.
+- **Decision:** GPU serialization is database-backed with renewable attempt leases and claim-token fencing. Explicit retries retain attempt numbering; ordinary startup/worker polling recovers expired leases, while force recovery is an operator action after stopping old workers.
+- **Alternatives:** A process-local lock or indiscriminate stale recovery; rejected for multi-worker correctness.
+- **Decision:** Record estimated external executor attempts even when downstream decoding/probing fails; unique job/attempt keys prevent duplicate charges. Actual provider billing still requires supplied price tables.
+- **Alternatives:** Charge only successfully published versions; rejected because failed paid work still costs money.
+- **Decision:** Current human budget approvals are revalidated for each call, including repair. Execution metadata is bookkeeping; approval content hashes exclude _inputs/_execution while staying bound to authored content and the bounded amount.
+- **Alternatives:** Carry a permanent confirmed boolean through queue retries; rejected as an approval bypass.
+- **Decision:** Add a prompt-only fictional sheet path with explicit human review/consent; do not use uploaded biometric references before authorization.
+- **Alternatives:** Leave the sheet handler unreachable or auto-consent generated assets; rejected.

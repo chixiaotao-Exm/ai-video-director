@@ -20,7 +20,6 @@ from avd.state.db import create_engine, create_session_factory, init_db
 from avd.state.models import Character, Node, NodeKind, NodeStatus, Project, Voice
 from avd.state.repo import ProjectRepo
 
-
 JOB_TYPES = {
     NodeKind.SHOT_FRAME: ("image_gen", JobLane.API),
     NodeKind.SHOT_VIDEO: ("image_to_video", JobLane.GPU),
@@ -61,11 +60,13 @@ class RebuildHarness:
     failing_node_id: str | None = None
 
     def handle(self, job: Job) -> dict[str, Any]:
-        self.calls.append({
-            "node_id": job.node_id,
-            "job_type": job.job_type,
-            "payload": deepcopy(job.payload),
-        })
+        self.calls.append(
+            {
+                "node_id": job.node_id,
+                "job_type": job.job_type,
+                "payload": deepcopy(job.payload),
+            }
+        )
         if job.node_id == self.failing_node_id:
             raise RuntimeError("Deliberate fake generation failure")
         payload = job.payload
@@ -195,9 +196,7 @@ def harness(tmp_path: Path) -> Iterator[RebuildHarness]:
         project_id = project.id
         node_ids = {(node.kind, node.shot_index): node.id for node in project.nodes}
     queue = JobQueue(session_factory)
-    engine = RebuildEngine(
-        session_factory, queue, settings, estimate_cost=lambda node: 0.1
-    )
+    engine = RebuildEngine(session_factory, queue, settings, estimate_cost=lambda node: 0.1)
     result = RebuildHarness(session_factory, settings, project_id, node_ids, queue, engine)
     for job_type, _ in JOB_TYPES.values():
         result.registry.register(job_type, result.handle)
@@ -258,9 +257,7 @@ def test_line_edit_rebuilds_only_second_shot_audio_and_downstream_nodes(
     }
     assert len(harness.calls) == 4
     assert {call["node_id"] for call in harness.calls} == affected
-    assert [call["job_type"] for call in harness.calls] == [
-        "tts", "lipsync", "subtitles", "final"
-    ]
+    assert [call["job_type"] for call in harness.calls] == ["tts", "lipsync", "subtitles", "final"]
     after = harness.snapshot()
     for node_id, previous in before.items():
         current = after[node_id]
@@ -357,7 +354,9 @@ def test_large_batch_requires_confirmation_before_any_job_is_submitted(
     ],
 )
 def test_generation_refuses_revoked_asset_consent(
-    harness: RebuildHarness, kind: NodeKind, asset_name: str,
+    harness: RebuildHarness,
+    kind: NodeKind,
+    asset_name: str,
 ) -> None:
     harness.drain()
     with harness.session_factory() as session:
@@ -389,17 +388,13 @@ def test_terminal_job_failure_leaves_dependents_dirty(
     state = harness.snapshot()
     assert state[failed_node_id]["status"] == NodeStatus.FAILED
     assert state[failed_node_id]["versions"] == []
-    for kind, index in (
-        (NodeKind.LIPSYNC, 2), (NodeKind.SUBTITLES, 2), (NodeKind.FINAL, None)
-    ):
+    for kind, index in ((NodeKind.LIPSYNC, 2), (NodeKind.SUBTITLES, 2), (NodeKind.FINAL, None)):
         node_id = harness.node_ids[(kind, index)]
         assert state[node_id]["status"] == NodeStatus.DIRTY
         assert state[node_id]["versions"] == []
         assert all(call["node_id"] != node_id for call in harness.calls)
     assert all(
-        node["status"] == NodeStatus.CLEAN
-        for node in state.values()
-        if node["shot_index"] == 1
+        node["status"] == NodeStatus.CLEAN for node in state.values() if node["shot_index"] == 1
     )
     failures = harness.queue.list(harness.project_id, JobStatus.FAILED)
     assert len(failures) == 1
@@ -433,7 +428,10 @@ def test_repeated_rebuild_does_not_duplicate_pending_jobs(
     assert len(harness.queue.list(harness.project_id)) == 11
     assert all(node["status"] == NodeStatus.CLEAN for node in harness.snapshot().values())
 
-def test_completion_after_edit_records_history_without_clearing_new_recipe(harness: RebuildHarness) -> None:
+
+def test_completion_after_edit_records_history_without_clearing_new_recipe(
+    harness: RebuildHarness,
+) -> None:
     harness.engine.rebuild(harness.project_id)
     old_job = harness.queue.claim_next("gpu")
     assert old_job is not None
@@ -445,9 +443,13 @@ def test_completion_after_edit_records_history_without_clearing_new_recipe(harne
     output = Path(old_job.payload["data_dir"]) / old_job.payload["output_dir"] / "old.bin"
     output.parent.mkdir(parents=True)
     output.write_bytes(b"old generation")
-    completed = harness.queue.complete(old_job.id, {
-        "outputs": {"audio": output.relative_to(harness.settings.data_dir).as_posix()}, "cost": 0.1,
-    })
+    completed = harness.queue.complete(
+        old_job.id,
+        {
+            "outputs": {"audio": output.relative_to(harness.settings.data_dir).as_posix()},
+            "cost": 0.1,
+        },
+    )
     harness.engine.on_finished(completed)
     with harness.session_factory() as session:
         node = session.get(Node, old_job.node_id)

@@ -18,20 +18,26 @@ def _input(tmp_path: Path, name: str = "source.mp4") -> Path:
     return source
 
 
-def _metadata(duration: str = "2.5", *, audio: bool = True, width: int = 640, height: int = 360) -> str:
+def _metadata(
+    duration: str = "2.5", *, audio: bool = True, width: int = 640, height: int = 360
+) -> str:
     streams: list[dict[str, Any]] = [{"codec_type": "video", "width": width, "height": height}]
     if audio:
         streams.append({"codec_type": "audio"})
     return json.dumps({"streams": streams, "format": {"duration": duration}})
 
 
-def test_duration_probes_audio_with_safe_argument_list(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_duration_probes_audio_with_safe_argument_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     source = _input(tmp_path, "voice's sample.wav")
     calls: list[tuple[list[str], dict[str, Any]]] = []
 
     def run(arguments: list[str], **kwargs: Any) -> SimpleNamespace:
         calls.append((arguments, kwargs))
-        return SimpleNamespace(stdout='{"streams": [{"codec_type": "audio"}], "format": {"duration": "1.25"}}')
+        return SimpleNamespace(
+            stdout='{"streams": [{"codec_type": "audio"}], "format": {"duration": "1.25"}}'
+        )
 
     monkeypatch.setattr(media.subprocess, "run", run)
     assert media.media_duration(source) == 1.25
@@ -41,20 +47,34 @@ def test_duration_probes_audio_with_safe_argument_list(monkeypatch: pytest.Monke
     assert "shell" not in calls[0][1]
 
 
-@pytest.mark.parametrize("duration", ["0", "-1", "nan", "inf", "-inf", "N/A", "invalid", None, True])
-def test_duration_rejects_invalid_values(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, duration: Any) -> None:
+@pytest.mark.parametrize(
+    "duration", ["0", "-1", "nan", "inf", "-inf", "N/A", "invalid", None, True]
+)
+def test_duration_rejects_invalid_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, duration: Any
+) -> None:
     source = _input(tmp_path)
     monkeypatch.setattr(
-        media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps({"format": {"duration": duration}}))
+        media.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout=json.dumps({"format": {"duration": duration}})
+        ),
     )
     with pytest.raises(media.MediaProcessingError, match="duration"):
         media.media_duration(source)
 
 
-@pytest.mark.parametrize("payload", ["garbage", "null", "[]", '{"streams": null}', '{"format": null}'])
-def test_duration_rejects_malformed_probe(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, payload: str) -> None:
+@pytest.mark.parametrize(
+    "payload", ["garbage", "null", "[]", '{"streams": null}', '{"format": null}']
+)
+def test_duration_rejects_malformed_probe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, payload: str
+) -> None:
     source = _input(tmp_path)
-    monkeypatch.setattr(media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=payload))
+    monkeypatch.setattr(
+        media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=payload)
+    )
     with pytest.raises(media.MediaProcessingError):
         media.media_duration(source)
 
@@ -62,7 +82,9 @@ def test_duration_rejects_malformed_probe(monkeypatch: pytest.MonkeyPatch, tmp_p
 def test_duration_falls_back_to_stream(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     source = _input(tmp_path)
     monkeypatch.setattr(
-        media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout='{"streams": [{"duration": "2"}]}')
+        media.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout='{"streams": [{"duration": "2"}]}'),
     )
     assert media.media_duration(source) == 2
 
@@ -71,7 +93,10 @@ def test_duration_falls_back_to_stream(monkeypatch: pytest.MonkeyPatch, tmp_path
     ("error", "message"),
     [
         (FileNotFoundError(), "required on PATH"),
-        (subprocess.CalledProcessError(1, ["ffprobe"], stderr="bad media stream"), "bad media stream"),
+        (
+            subprocess.CalledProcessError(1, ["ffprobe"], stderr="bad media stream"),
+            "bad media stream",
+        ),
         (subprocess.TimeoutExpired(["ffprobe"], 120), "timed out"),
     ],
 )
@@ -124,7 +149,9 @@ def test_srt_requires_nonempty_text(tmp_path: Path, lines: list[tuple[str, float
         media.write_srt(lines, tmp_path / "captions.srt")
 
 
-def test_burn_subtitles_avoids_filter_path_escaping(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_burn_subtitles_avoids_filter_path_escaping(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     source = _input(tmp_path, "source's [video].mp4")
     subtitles = tmp_path / "captions 'quoted', [special];.srt"
     media.write_srt([("Hello", 1)], subtitles)
@@ -150,7 +177,9 @@ def test_burn_subtitles_avoids_filter_path_escaping(monkeypatch: pytest.MonkeyPa
     assert source.read_bytes() == b"fake media"
 
 
-def test_final_concatenates_in_order_normalizes_and_labels(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_final_concatenates_in_order_normalizes_and_labels(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     first = _input(tmp_path, "shot two.mp4")
     second = _input(tmp_path, "shot one.mp4")
     output = tmp_path / "final.mp4"
@@ -160,7 +189,11 @@ def test_final_concatenates_in_order_normalizes_and_labels(monkeypatch: pytest.M
         calls.append(arguments)
         assert "shell" not in kwargs
         if arguments[0] == "ffprobe":
-            metadata = _metadata("1.5", width=641, height=361) if arguments[-1] == str(first.resolve()) else _metadata("2", audio=False, width=320, height=240)
+            metadata = (
+                _metadata("1.5", width=641, height=361)
+                if arguments[-1] == str(first.resolve())
+                else _metadata("2", audio=False, width=320, height=240)
+            )
             return SimpleNamespace(stdout=metadata)
         Path(arguments[-1]).write_bytes(b"final")
         return SimpleNamespace(stdout="")
@@ -181,7 +214,9 @@ def test_final_concatenates_in_order_normalizes_and_labels(monkeypatch: pytest.M
     assert "-n" in arguments and "-y" not in arguments
 
 
-def test_existing_outputs_and_inputs_are_protected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_existing_outputs_and_inputs_are_protected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     source = _input(tmp_path)
     subtitles = _input(tmp_path, "captions.srt")
     output = _input(tmp_path, "existing.mp4")
@@ -209,7 +244,9 @@ def test_existing_outputs_and_inputs_are_protected(monkeypatch: pytest.MonkeyPat
     assert source.read_bytes() == output.read_bytes() == b"fake media"
 
 
-def test_success_without_output_is_an_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_success_without_output_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     source = _input(tmp_path)
     subtitles = _input(tmp_path, "captions.srt")
     monkeypatch.setattr(media.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout=""))
@@ -217,36 +254,86 @@ def test_success_without_output_is_an_error(monkeypatch: pytest.MonkeyPatch, tmp
         media.burn_subtitles(source, subtitles, tmp_path / "new.mp4")
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="FFmpeg and ffprobe required")
+@pytest.mark.skipif(
+    not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="FFmpeg and ffprobe required"
+)
 def test_real_ffmpeg_subtitles_and_mixed_audio_assembly(tmp_path: Path) -> None:
     capabilities = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-filters"], check=True, capture_output=True, text=True, timeout=30
+        ["ffmpeg", "-hide_banner", "-filters"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
     ).stdout
     if " subtitles " not in capabilities or " drawtext " not in capabilities:
         pytest.skip("FFmpeg must include subtitles and drawtext filters")
     first, second = tmp_path / "first.mp4", tmp_path / "second.mp4"
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-n",
-            "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=25",
-            "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
-            "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(first),
-        ], check=True, capture_output=True, timeout=60,
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-n",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=160x90:r=25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=16000",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(first),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=60,
     )
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-n",
-            "-f", "lavfi", "-i", "color=c=red:s=120x100:r=24",
-            "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(second),
-        ], check=True, capture_output=True, timeout=60,
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-n",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=120x100:r=24",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(second),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=60,
     )
-    subtitles = media.write_srt([("A short line", media.media_duration(first))], tmp_path / "captions.srt")
+    subtitles = media.write_srt(
+        [("A short line", media.media_duration(first))], tmp_path / "captions.srt"
+    )
     burned = media.burn_subtitles(first, subtitles, tmp_path / "burned.mp4")
     output = media.assemble_final([burned, second], tmp_path / "final.mp4")
     assert media.media_duration(output) == pytest.approx(2, abs=0.15)
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(output)],
-        check=True, capture_output=True, text=True, timeout=30,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     metadata = json.loads(result.stdout)
     assert metadata["format"]["tags"]["comment"] == "AI-generated"

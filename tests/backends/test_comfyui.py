@@ -38,21 +38,36 @@ def test_full_upload_submit_wait_download_cycle(tmp_path: Path) -> None:
             import json
 
             assert request.method == "POST"
-            assert json.loads(request.content) == {
-                "client_id": "client-test", "prompt": workflow
-            }
+            assert json.loads(request.content) == {"client_id": "client-test", "prompt": workflow}
             return httpx.Response(200, json={"prompt_id": "prompt-1", "node_errors": {}})
         if request.url.path == "/history/prompt-1":
             history_calls += 1
             if history_calls == 1:
                 return httpx.Response(200, json={})
-            return httpx.Response(200, json={"prompt-1": {
-                "status": {"completed": True, "status_str": "success"},
-                "outputs": {
-                    "7": {"images": [{"filename": "output.png", "subfolder": "run-1", "type": "output"}]},
-                    "8": {"audio": [{"filename": "voice.wav", "subfolder": "", "type": "output"}]},
+            return httpx.Response(
+                200,
+                json={
+                    "prompt-1": {
+                        "status": {"completed": True, "status_str": "success"},
+                        "outputs": {
+                            "7": {
+                                "images": [
+                                    {
+                                        "filename": "output.png",
+                                        "subfolder": "run-1",
+                                        "type": "output",
+                                    }
+                                ]
+                            },
+                            "8": {
+                                "audio": [
+                                    {"filename": "voice.wav", "subfolder": "", "type": "output"}
+                                ]
+                            },
+                        },
+                    }
                 },
-            }})
+            )
         if request.url.path == "/view":
             assert request.url.params["type"] == "output"
             if request.url.params["filename"] == "output.png":
@@ -82,12 +97,26 @@ def test_submit_node_error_is_clear() -> None:
 
 
 def test_wait_execution_error_is_clear() -> None:
-    client = make_client(lambda request: httpx.Response(200, json={"p": {
-        "status": {"status_str": "error", "completed": False, "messages": [[
-            "execution_error", {"node_id": "12", "exception_message": "VRAM exhausted"}
-        ]]},
-        "outputs": {},
-    }}))
+    client = make_client(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "p": {
+                    "status": {
+                        "status_str": "error",
+                        "completed": False,
+                        "messages": [
+                            [
+                                "execution_error",
+                                {"node_id": "12", "exception_message": "VRAM exhausted"},
+                            ]
+                        ],
+                    },
+                    "outputs": {},
+                }
+            },
+        )
+    )
     with pytest.raises(ComfyUINodeError, match="VRAM exhausted"):
         client.wait("p", poll_interval=0)
 
@@ -101,16 +130,16 @@ def test_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
         client.wait("p", poll_interval=0.1, timeout=1.0)
 
 
-def test_wait_does_not_finish_on_explicit_incomplete_history(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_wait_does_not_finish_on_explicit_incomplete_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = 0
     monkeypatch.setattr("avd.backends.comfyui.time.sleep", lambda duration: None)
 
     def handle(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
-        return httpx.Response(200, json={"p": {
-            "status": {"completed": calls > 1}, "outputs": {}
-        }})
+        return httpx.Response(200, json={"p": {"status": {"completed": calls > 1}, "outputs": {}}})
 
     client = make_client(handle)
     client.wait("p", poll_interval=0)
@@ -140,9 +169,21 @@ def test_transport_errors_are_wrapped() -> None:
 def test_download_keeps_paths_inside_destination_and_avoids_duplicates(tmp_path: Path) -> None:
     def handle(request: httpx.Request) -> httpx.Response:
         if request.url.path.startswith("/history/"):
-            return httpx.Response(200, json={"p": {"outputs": {"1": {"images": [
-                {"filename": "../output.png"}, {"filename": "output.png"}
-            ]}}}})
+            return httpx.Response(
+                200,
+                json={
+                    "p": {
+                        "outputs": {
+                            "1": {
+                                "images": [
+                                    {"filename": "../output.png"},
+                                    {"filename": "output.png"},
+                                ]
+                            }
+                        }
+                    }
+                },
+            )
         return httpx.Response(200, content=b"output")
 
     destination = tmp_path / "download"

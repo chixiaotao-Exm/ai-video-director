@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, MutableMapping
 import logging
 import threading
-import time
 import traceback
+from collections.abc import Callable, MutableMapping
 from typing import Any
 
 from .models import Job, JobLane
-from .queue import JobQueue
-
+from .queue import ClaimLostError, JobQueue
 
 JobHandler = Callable[[Job], dict[str, Any]]
-_GPU_RUN_LOCK = threading.Lock()
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -40,7 +37,7 @@ class Worker:
         lane: JobLane | str,
         registry: HandlerRegistry | MutableMapping[str, JobHandler],
         on_finished: Callable[[Job], None] | None = None,
-    ):
+    ) -> None:
         self.queue = queue
         self.lane = JobLane(lane)
         self.registry = registry
@@ -54,33 +51,62 @@ class Worker:
             self.registry[job_type] = handler
 
     def run_once(self) -> bool:
-        if self.lane == JobLane.GPU:
-            with _GPU_RUN_LOCK:
-                return self._run_once()
+        self.queue.recover_stale()
         return self._run_once()
 
     def _run_once(self) -> bool:
         job = self.queue.claim_next(self.lane, self.last_model_key)
         if job is None:
             return False
+        claim_token = job.claim_token
+        assert claim_token is not None
         self.last_model_key = job.model_key
         handler = self._get_handler(job.job_type)
         if handler is None:
-            finished = self.queue.fail(
-                job.id,
-                f"Unknown job_type: {job.job_type}",
-                retry=False,
-            )
-            self._notify(finished)
+            try:
+                finished = self.queue.fail(
+                    job.id,
+                    f"Unknown job_type: {job.job_type}",
+                    retry=False,
+                    claim_token=claim_token,
+                )
+            except ClaimLostError:
+                _LOGGER.warning("Lost ownership of job %s before failing it", job.id)
+            else:
+                self._notify(finished)
             return True
+        stop_heartbeat = threading.Event()
+        heartbeat = threading.Thread(
+            target=self._heartbeat,
+            args=(job.id, claim_token, stop_heartbeat),
+            name=f"job-lease-{job.id}",
+            daemon=True,
+        )
+        heartbeat.start()
         try:
-            result = handler(job)
-        except Exception:
-            finished = self.queue.fail(job.id, traceback.format_exc())
-        else:
-            finished = self.queue.complete(job.id, result)
+            try:
+                result = handler(job)
+            except Exception:
+                finished = self.queue.fail(job.id, traceback.format_exc(), claim_token=claim_token)
+            else:
+                finished = self.queue.complete(job.id, result, claim_token=claim_token)
+        except ClaimLostError:
+            _LOGGER.warning("Lost ownership of job %s; discarding its late result", job.id)
+            return True
+        finally:
+            stop_heartbeat.set()
+            heartbeat.join()
         self._notify(finished)
         return True
+
+    def _heartbeat(self, job_id: str, claim_token: str, stop_event: threading.Event) -> None:
+        while not stop_event.wait(self.queue.lease_seconds / 3):
+            try:
+                if not self.queue.heartbeat(job_id, claim_token):
+                    return
+            except Exception:
+                # A transient write lock must not silently terminate renewal.
+                _LOGGER.exception("Could not renew lease for job %s", job_id)
 
     def run_forever(
         self,

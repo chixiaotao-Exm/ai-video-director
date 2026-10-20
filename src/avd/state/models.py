@@ -7,27 +7,31 @@ points at the version currently selected for that node.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-import uuid
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
+    Column,
     DateTime,
-    Enum as SAEnum,
     Float,
     ForeignKey,
     Integer,
-    JSON,
     String,
     Table,
-    Column,
     UniqueConstraint,
     event,
     inspect,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from .paths import relative_path, relative_paths
 
 
 def _new_id() -> str:
@@ -69,7 +73,7 @@ class NodeStatus(str, Enum):
 def _enum_values(enum_type: type[Enum]) -> list[str]:
     """Store enum values (rather than Python member names) in SQLite."""
 
-    return [member.value for member in enum_type]  # type: ignore[return-value]
+    return [str(member.value) for member in enum_type]
 
 
 node_dependencies = Table(
@@ -97,17 +101,11 @@ class Character(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    reference_images: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict
-    )
+    reference_images: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
     fixed_appearance_prompt: Mapped[str | None] = mapped_column(String, nullable=True)
     lora_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    consent_confirmed: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
-    consent_confirmed_by: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
+    consent_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    consent_confirmed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     consent_confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -115,9 +113,7 @@ class Character(Base):
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
 
-    projects: Mapped[list[Project]] = relationship(
-        "Project", back_populates="character"
-    )
+    projects: Mapped[list[Project]] = relationship("Project", back_populates="character")
 
     @property
     def front_image(self) -> str | None:
@@ -145,21 +141,13 @@ class Voice(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sample_audio_paths: Mapped[list[str]] = mapped_column(
-        JSON, nullable=False, default=list
-    )
+    sample_audio_paths: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     engine: Mapped[str | None] = mapped_column(String(255), nullable=True)
     engine_voice_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    default_params: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict
-    )
-    consent_confirmed: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
-    consent_confirmed_by: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
+    default_params: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    consent_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    consent_confirmed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     consent_confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -178,9 +166,7 @@ class Project(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     source_video_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    analysis_result: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON, nullable=True
-    )
+    analysis_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     character_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("characters.id", ondelete="SET NULL"), nullable=True
     )
@@ -193,9 +179,7 @@ class Project(Base):
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
 
-    character: Mapped[Character | None] = relationship(
-        "Character", back_populates="projects"
-    )
+    character: Mapped[Character | None] = relationship("Character", back_populates="projects")
     voice: Mapped[Voice | None] = relationship("Voice", back_populates="projects")
     nodes: Mapped[list[Node]] = relationship(
         "Node",
@@ -279,18 +263,14 @@ class Version(Base):
     """An immutable snapshot of a node's recipe and generated outputs."""
 
     __tablename__ = "versions"
-    __table_args__ = (
-        UniqueConstraint("node_id", "number", name="uq_versions_node_number"),
-    )
+    __table_args__ = (UniqueConstraint("node_id", "number", name="uq_versions_node_number"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
     node_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False
     )
     number: Mapped[int] = mapped_column(Integer, nullable=False)
-    recipe_snapshot: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict
-    )
+    recipe_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     output_paths: Mapped[dict[str, Any] | list[Any]] = mapped_column(
         JSON, nullable=False, default=dict
     )
@@ -301,9 +281,7 @@ class Version(Base):
     )
     note: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    node: Mapped[Node] = relationship(
-        "Node", back_populates="versions", foreign_keys=[node_id]
-    )
+    node: Mapped[Node] = relationship("Node", back_populates="versions", foreign_keys=[node_id])
 
 
 @event.listens_for(Version, "before_update")
@@ -317,9 +295,42 @@ def _prevent_version_update(mapper: Any, connection: Any, target: Version) -> No
         if state.attrs[attribute.key].history.has_changes()
     ]
     if changed:
-        raise ValueError(
-            f"Version rows are immutable; changed columns: {', '.join(changed)}"
-        )
+        raise ValueError(f"Version rows are immutable; changed columns: {', '.join(changed)}")
+
+
+@event.listens_for(Version, "before_delete")
+def _prevent_version_delete(mapper: Any, connection: Any, target: Version) -> None:
+    raise ValueError("Version rows are immutable and cannot be deleted")
+
+
+@event.listens_for(Character, "before_insert")
+@event.listens_for(Character, "before_update")
+def _validate_character_paths(mapper: Any, connection: Any, target: Character) -> None:
+    target.reference_images = relative_paths(target.reference_images or {})
+    if target.lora_path is not None:
+        target.lora_path = relative_path(target.lora_path)
+
+
+@event.listens_for(Voice, "before_insert")
+@event.listens_for(Voice, "before_update")
+def _validate_voice_paths(mapper: Any, connection: Any, target: Voice) -> None:
+    target.sample_audio_paths = relative_paths(target.sample_audio_paths or [])
+    if target.model_path is not None:
+        target.model_path = relative_path(target.model_path)
+
+
+@event.listens_for(Project, "before_insert")
+@event.listens_for(Project, "before_update")
+def _validate_source_path(mapper: Any, connection: Any, target: Project) -> None:
+    if target.source_video_path is not None:
+        target.source_video_path = relative_path(target.source_video_path)
+
+
+@event.listens_for(Version, "before_insert")
+def _validate_output_paths(mapper: Any, connection: Any, target: Version) -> None:
+    target.output_paths = relative_paths(
+        target.output_paths if target.output_paths is not None else {}
+    )
 
 
 __all__ = [

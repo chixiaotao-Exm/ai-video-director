@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-import uuid
 from typing import Any
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from avd.state.models import Base
@@ -36,7 +37,7 @@ class JobStatus(str, Enum):
 
 
 def _enum_values(enum_type: type[Enum]) -> list[str]:
-    return [member.value for member in enum_type]  # type: ignore[return-value]
+    return [str(member.value) for member in enum_type]
 
 
 class Job(Base):
@@ -83,12 +84,12 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
-    started_at: Mapped[datetime | None] = mapped_column(
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 __all__ = ["Job", "JobLane", "JobStatus"]

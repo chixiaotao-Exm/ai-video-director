@@ -21,9 +21,7 @@ def require_usable(asset: Asset) -> Asset:
         raise TypeError("asset must be a Character or Voice")
     if not asset.consent_confirmed:
         kind = "character" if isinstance(asset, Character) else "voice"
-        raise ConsentRequiredError(
-            f"Consent is required before using {kind} asset {asset.id}"
-        )
+        raise ConsentRequiredError(f"Consent is required before using {kind} asset {asset.id}")
     return asset
 
 

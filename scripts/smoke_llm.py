@@ -12,7 +12,9 @@ from avd.state.repo import ProjectRepo
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--role", choices=("director", "script", "qa", "analysis"), default="script")
+    parser.add_argument(
+        "--role", choices=("director", "script", "qa", "analysis"), default="script"
+    )
     parser.add_argument("--budget", type=float, default=1.0)
     args = parser.parse_args()
     settings = Settings()
@@ -29,9 +31,13 @@ def main() -> int:
     init_db(engine)
     with create_session_factory(engine)() as session:
         project = ProjectRepo(session).create_project("LLM manual smoke", budget_limit=args.budget)
-        router = LLMRouter(settings, ledger=CostLedger(session, settings.model_prices), project=project)
+        router = LLMRouter(
+            settings, ledger=CostLedger(session, settings.model_prices), project=project
+        )
         try:
-            response = router.chat(args.role, [{"role": "user", "content": "Reply with exactly: smoke OK"}])
+            response = router.chat(
+                args.role, [{"role": "user", "content": "Reply with exactly: smoke OK"}]
+            )
         finally:
             # Persist any completed billed responses even if later validation fails.
             session.commit()

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import importlib
 import json
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
 
@@ -47,9 +47,7 @@ def conversation() -> list[dict[str, Any]]:
         ChatResponse(
             content="Checking.",
             tool_calls=[
-                ToolCall(
-                    id="call-1", name="get_project_status", arguments={"project_id": "p1"}
-                )
+                ToolCall(id="call-1", name="get_project_status", arguments={"project_id": "p1"})
             ],
         ).as_message(),
         {
@@ -73,7 +71,10 @@ def test_anthropic_normalizes_tool_round_trip_and_usage() -> None:
             content=[
                 SimpleNamespace(type="text", text="Ready."),
                 SimpleNamespace(
-                    type="tool_use", id="call-2", name="get_project_status", input={"project_id": "p2"}
+                    type="tool_use",
+                    id="call-2",
+                    name="get_project_status",
+                    input={"project_id": "p2"},
                 ),
             ],
             usage=SimpleNamespace(input_tokens=12, output_tokens=7),
@@ -95,11 +96,16 @@ def test_anthropic_normalizes_tool_round_trip_and_usage() -> None:
     assert sent["system"] == "Keep responses short."
     assert sent["tools"] == [TOOL]
     assert sent["messages"][1]["content"][1] == {
-        "type": "tool_use", "id": "call-1", "name": TOOL["name"], "input": {"project_id": "p1"}
+        "type": "tool_use",
+        "id": "call-1",
+        "name": TOOL["name"],
+        "input": {"project_id": "p1"},
     }
     assert sent["messages"][2] == {
         "role": "user",
-        "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": '{"status":"clean"}'}],
+        "content": [
+            {"type": "tool_result", "tool_use_id": "call-1", "content": '{"status":"clean"}'}
+        ],
     }
     assert messages == original
 
@@ -109,16 +115,22 @@ def test_openai_normalizes_tool_only_reply_and_usage() -> None:
 
     create = RecordingCall(
         SimpleNamespace(
-            choices=[SimpleNamespace(
-                message=SimpleNamespace(
-                    content=None,
-                    tool_calls=[SimpleNamespace(
-                        id="call-2",
-                        function=SimpleNamespace(name=TOOL["name"], arguments='{"project_id":"p2"}'),
-                    )],
-                ),
-                finish_reason="tool_calls",
-            )],
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call-2",
+                                function=SimpleNamespace(
+                                    name=TOOL["name"], arguments='{"project_id":"p2"}'
+                                ),
+                            )
+                        ],
+                    ),
+                    finish_reason="tool_calls",
+                )
+            ],
             usage=SimpleNamespace(prompt_tokens=17, completion_tokens=9),
         )
     )
@@ -147,19 +159,28 @@ def test_gemini_normalizes_system_tool_round_trip_and_usage() -> None:
 
     generate = RecordingCall(
         SimpleNamespace(
-            candidates=[SimpleNamespace(
-                content=SimpleNamespace(parts=[
-                    SimpleNamespace(text="Ready.", function_call=None),
-                    SimpleNamespace(text=None, function_call=SimpleNamespace(
-                        id="call-2", name=TOOL["name"], args={"project_id": "p2"}
-                    )),
-                ]),
-                finish_reason="STOP",
-            )],
+            candidates=[
+                SimpleNamespace(
+                    content=SimpleNamespace(
+                        parts=[
+                            SimpleNamespace(text="Ready.", function_call=None),
+                            SimpleNamespace(
+                                text=None,
+                                function_call=SimpleNamespace(
+                                    id="call-2", name=TOOL["name"], args={"project_id": "p2"}
+                                ),
+                            ),
+                        ]
+                    ),
+                    finish_reason="STOP",
+                )
+            ],
             usage_metadata=SimpleNamespace(prompt_token_count=23, candidates_token_count=11),
         )
     )
-    provider = GeminiProvider(client=SimpleNamespace(models=SimpleNamespace(generate_content=generate)))
+    provider = GeminiProvider(
+        client=SimpleNamespace(models=SimpleNamespace(generate_content=generate))
+    )
     messages = conversation()
     original = deepcopy(messages)
     result = provider.chat("gemini-test", messages, [TOOL])
@@ -176,7 +197,8 @@ def test_gemini_normalizes_system_tool_round_trip_and_usage() -> None:
     assert declaration["parameters"] == TOOL["input_schema"]
     assert sent["contents"][1]["role"] == "model"
     assert sent["contents"][1]["parts"][1]["function_call"] == {
-        "name": TOOL["name"], "args": {"project_id": "p1"}
+        "name": TOOL["name"],
+        "args": {"project_id": "p1"},
     }
     assert sent["contents"][2]["parts"][0]["function_response"]["name"] == TOOL["name"]
     assert messages == original
@@ -209,12 +231,18 @@ def test_live_adapter_passes_relay_url_to_lazy_sdk(
         return SimpleNamespace(**{factory_name: factory})
 
     monkeypatch.setattr(module.importlib, "import_module", load_sdk)
-    adapter = getattr(module, class_name)(api_key="offline-test-key", base_url="https://relay.invalid")
+    adapter = getattr(module, class_name)(
+        api_key="offline-test-key", base_url="https://relay.invalid"
+    )
     assert imports == []
     assert adapter._get_client() is client
     assert adapter._get_client() is client
     assert imports == [sdk_name]
-    expected_url: Any = {"base_url": "https://relay.invalid"} if url_key == "http_options" else "https://relay.invalid"
+    expected_url: Any = (
+        {"base_url": "https://relay.invalid"}
+        if url_key == "http_options"
+        else "https://relay.invalid"
+    )
     assert factory.calls == [{"api_key": "offline-test-key", url_key: expected_url}]
 
 
@@ -225,15 +253,17 @@ def test_two_invalid_structured_responses_are_both_billed_and_stop_retrying() ->
     init_db(engine)
     with create_session_factory(engine)() as session:
         project = ProjectRepo(session).create_project("invalid schema", budget_limit=100)
-        provider = FakeProvider([
-            ChatResponse(content='{"count":0}', input_tokens=100, output_tokens=20),
-            ChatResponse(content="still not JSON", input_tokens=150, output_tokens=30),
-            ChatResponse(content='{"count":3}', input_tokens=1, output_tokens=1),
-        ])
+        provider = FakeProvider(
+            [
+                ChatResponse(content='{"count":0}', input_tokens=100, output_tokens=20),
+                ChatResponse(content="still not JSON", input_tokens=150, output_tokens=30),
+                ChatResponse(content='{"count":3}', input_tokens=1, output_tokens=1),
+            ]
+        )
         settings = Settings(_env_file=None, confirm_threshold=100)
-        ledger = CostLedger(session, {
-            settings.script_model: ModelPrice(input_per_million=2, output_per_million=4)
-        })
+        ledger = CostLedger(
+            session, {settings.script_model: ModelPrice(input_per_million=2, output_per_million=4)}
+        )
         router = LLMRouter(settings, providers={"openai": provider}, ledger=ledger, project=project)
         messages = [{"role": "user", "content": "Count the shots."}]
         original = deepcopy(messages)
@@ -243,7 +273,10 @@ def test_two_invalid_structured_responses_are_both_billed_and_stop_retrying() ->
 
         entries = ledger.list(project.id)
         assert len(entries) == 2
-        assert sorted((entry.input_tokens, entry.output_tokens) for entry in entries) == [(100, 20), (150, 30)]
+        assert sorted((entry.input_tokens, entry.output_tokens) for entry in entries) == [
+            (100, 20),
+            (150, 30),
+        ]
         assert project.spent == pytest.approx((250 * 2 + 50 * 4) / 1_000_000)
         assert all(entry.role == "script" and entry.provider == "openai" for entry in entries)
         assert len(provider.calls) == 2

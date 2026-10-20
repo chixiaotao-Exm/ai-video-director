@@ -27,12 +27,15 @@ settings = Settings()
 profile = settings.comfyui_profile
 with ComfyUIClient(profile.base_url, profile.timeout) as client:
     image_name = client.upload_file("frame.png")
-    workflow = load_workflow("image_to_video", {
-        "image": image_name,
-        "prompt": "Slow camera push toward the character",
-        "duration_s": 3.0,
-        "seed": 42,
-    })
+    workflow = load_workflow(
+        "image_to_video",
+        {
+            "image": image_name,
+            "prompt": "Slow camera push toward the character",
+            "duration_s": 3.0,
+            "seed": 42,
+        },
+    )
     prompt_id = client.submit(workflow)
     client.wait(prompt_id, timeout=profile.timeout)
     output_files = client.download_outputs(prompt_id, "data/example-output")

@@ -2,25 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import math
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Protocol
 
 from avd.backends.comfyui import ComfyUIClient
-from avd.backends.image import ImageBackend, OpenAIImageBackend
+from avd.backends.image import ImageBackend
 from avd.backends.media import assemble_final, burn_subtitles, media_duration, write_srt
-from avd.backends.workflows import load_workflow
-from avd.config import Settings
+from avd.backends.workflows import load_workflow, render_workflow
+from avd.config import ComfyUIProfile, Settings
 from avd.jobs.models import Job
 from avd.jobs.worker import HandlerRegistry
+from avd.llm.images import ImageRouter
 
 
 class ComfyBackend(Protocol):
     def upload_file(self, path: str | Path) -> str: ...
     def submit(self, workflow: Mapping[str, Any]) -> str: ...
-    def wait(self, prompt_id: str, poll_interval: float = 0.25,
-             timeout: float | None = None) -> dict[str, Any]: ...
+    def wait(
+        self, prompt_id: str, poll_interval: float = 0.25, timeout: float | None = None
+    ) -> dict[str, Any]: ...
     def download_outputs(self, prompt_id: str, dest_dir: str | Path) -> list[Path]: ...
 
 
@@ -66,6 +68,7 @@ class _Execution:
         self.payload = job.payload
         self.root = Path(self.payload["data_dir"]).expanduser().resolve()
         self.recipe: dict[str, Any] = dict(self.payload.get("recipe", {}))
+        self.settings: dict[str, Any] = dict(self.recipe.get("_execution", {}))
         self.context: dict[str, Any] = dict(self.payload.get("context", {}))
         self.inputs: list[dict[str, Any]] = list(self.payload.get("inputs", {}).values())
         base = _data_path(self.root, self.payload["output_dir"])
@@ -88,7 +91,9 @@ class _Execution:
     def input_file(self, item: Mapping[str, Any], name: str) -> Path:
         return _data_path(self.root, item.get("outputs", {}).get(name), existing=True)
 
-    def result(self, outputs: Mapping[str, Path], *, duration_s: float | None = None) -> dict[str, Any]:
+    def result(
+        self, outputs: Mapping[str, Path], *, duration_s: float | None = None
+    ) -> dict[str, Any]:
         paths: dict[str, str] = {}
         for key, value in outputs.items():
             path = Path(value).resolve()
@@ -104,18 +109,18 @@ class _Execution:
 
 
 def build_registry(
-    settings: Settings, *, image_backend: ImageBackend | None = None,
+    settings: Settings,
+    *,
+    image_backend: ImageBackend | None = None,
     comfyui_client: ComfyBackend | None = None,
+    before_paid: Callable[[Job], None] | None = None,
 ) -> HandlerRegistry:
     """Create six handlers; external clients can be replaced with offline fakes.
 
     The rebuild engine checks consent and budget before queueing work and owns
     the ledger. Handlers return their estimated cost exactly once as job data.
     """
-    images = image_backend or OpenAIImageBackend(
-        settings.openai_api_key.get_secret_value() if settings.openai_api_key else None,
-        settings.openai_base_url,
-    )
+    images = ImageRouter(settings, image_backend)
     registry = HandlerRegistry()
 
     def image_gen(job: Job) -> dict[str, Any]:
@@ -132,22 +137,30 @@ def build_registry(
             raise ValueError("First frame generation requires character reference images")
         prompt = "\n\n".join(str(value).strip() for value in (appearance, visual) if value)
         if sheet:
-            prompt = "Create a character reference sheet with front, side and full-body views.\n\n" + prompt
+            prompt = (
+                "Create a character reference sheet with front, side and full-body views.\n\n"
+                + prompt
+            )
         if not prompt.strip():
             raise ValueError("Image generation requires an appearance or visual prompt")
         execution.prepare()
+        if before_paid is not None:
+            before_paid(job)
         output = images.generate(
-            prompt=prompt, reference_images=references,
-            output_path=execution.output_dir / "image.png", model=settings.image_model,
+            prompt=prompt,
+            reference_images=references,
+            output_path=execution.output_dir / "image.png",
+            model=str(execution.settings.get("image_model", settings.image_model)),
         )
         return execution.result({"image": output})
 
     def comfy(job: Job) -> dict[str, Any]:
         execution = _Execution(job)
-        owned = comfyui_client is None
-        client = comfyui_client or ComfyUIClient(
-            settings.comfyui_profile.base_url, timeout=settings.comfyui_profile.timeout
+        profile = ComfyUIProfile.model_validate(
+            execution.settings.get("comfyui_profile", settings.comfyui_profile)
         )
+        owned = comfyui_client is None
+        client = comfyui_client or ComfyUIClient(profile.base_url, timeout=profile.timeout)
         try:
             recipe = execution.recipe
             if job.job_type == "image_to_video":
@@ -159,13 +172,15 @@ def build_registry(
                 values = {
                     "image": client.upload_file(frame),
                     "prompt": str(recipe.get("prompt", recipe.get("camera", ""))),
-                    "duration_s": duration, "seed": seed,
+                    "duration_s": duration,
+                    "seed": seed,
                 }
                 output_kind = "video"
             elif job.job_type == "tts":
                 voice = execution.context.get("voice") or {}
                 samples = _reference_paths(
-                    execution.root, recipe.get("sample_audio_paths", voice.get("sample_audio_paths", []))
+                    execution.root,
+                    recipe.get("sample_audio_paths", voice.get("sample_audio_paths", [])),
                 )
                 if not samples:
                     raise ValueError("TTS requires a consented voice sample")
@@ -173,7 +188,8 @@ def build_registry(
                 speed = _positive(recipe.get("speed", defaults.get("speed", 1.0)), "Voice speed")
                 values = {
                     "text": str(recipe.get("line", "")),
-                    "voice_sample": client.upload_file(samples[0]), "speed": speed,
+                    "voice_sample": client.upload_file(samples[0]),
+                    "speed": speed,
                     "emotion": str(recipe.get("emotion", defaults.get("emotion", "neutral"))),
                 }
                 output_kind = "audio"
@@ -182,18 +198,26 @@ def build_registry(
                 audio = execution.input_file(execution.dependency("voiceover"), "audio")
                 values = {"video": client.upload_file(video), "audio": client.upload_file(audio)}
                 output_kind = "video"
-            workflow = load_workflow(
-                job.job_type, values, template_dir=getattr(settings, "workflow_dir", None)
-            )
+            if "workflow_template" in execution.settings:
+                if execution.settings.get("workflow_name") != job.job_type:
+                    raise ValueError("Captured workflow does not match the job type")
+                workflow = render_workflow(execution.settings["workflow_template"], values)
+            else:
+                workflow = load_workflow(job.job_type, values, template_dir=settings.workflow_dir)
             execution.prepare()
+            if before_paid is not None:
+                before_paid(job)
             prompt_id = client.submit(workflow)
-            client.wait(prompt_id, timeout=settings.comfyui_profile.timeout)
+            client.wait(prompt_id, timeout=profile.timeout)
             downloaded = client.download_outputs(prompt_id, execution.output_dir)
             extensions = (
-                (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".aac") if output_kind == "audio"
+                (".wav", ".flac", ".mp3", ".m4a", ".ogg", ".aac")
+                if output_kind == "audio"
                 else (".mp4", ".webm", ".mov", ".mkv", ".avi")
             )
-            candidates = [Path(path) for path in downloaded if Path(path).suffix.lower() in extensions]
+            candidates = [
+                Path(path) for path in downloaded if Path(path).suffix.lower() in extensions
+            ]
             if not candidates:
                 raise RuntimeError(f"ComfyUI returned no {output_kind} output for {job.job_type}")
             candidates.sort(key=lambda path: (extensions.index(path.suffix.lower()), path.name))
@@ -235,7 +259,10 @@ def build_registry(
         indexes = [item["shot_index"] for item in items]
         if len(set(indexes)) != len(indexes):
             raise ValueError("Final render has duplicate shot indexes")
-        clips = [execution.input_file(item, "video") for item in sorted(items, key=lambda item: item["shot_index"])]
+        clips = [
+            execution.input_file(item, "video")
+            for item in sorted(items, key=lambda item: item["shot_index"])
+        ]
         execution.prepare()
         output = assemble_final(clips, execution.output_dir / "final.mp4")
         return execution.result({"final": output}, duration_s=media_duration(output))

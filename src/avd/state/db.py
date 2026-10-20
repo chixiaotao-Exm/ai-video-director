@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine as sqlalchemy_create_engine
+from sqlalchemy import event, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -42,7 +43,24 @@ def create_engine(
         connect_args.setdefault("timeout", 30)
         engine_kwargs["connect_args"] = connect_args
     engine_kwargs.update(kwargs)
-    return sqlalchemy_create_engine(url, **engine_kwargs)
+    engine = sqlalchemy_create_engine(url, **engine_kwargs)
+    _enable_foreign_keys(engine)
+    return engine
+
+
+def _sqlite_foreign_keys(connection: Any, record: Any) -> None:
+    cursor = connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
+
+
+def _enable_foreign_keys(engine: Engine) -> None:
+    if engine.dialect.name == "sqlite" and not event.contains(
+        engine, "connect", _sqlite_foreign_keys
+    ):
+        event.listen(engine, "connect", _sqlite_foreign_keys)
 
 
 def create_session_factory(
@@ -64,15 +82,60 @@ def create_session_factory(
 
 
 def init_db(engine: Engine) -> None:
-    """Create all state tables for a new database."""
+    """Create registered tables; the application registers its own model modules."""
 
-    # Importing the job model registers it on the shared declarative metadata.
-    from avd.jobs.models import Job  # noqa: F401
-    from avd.director.models import ChatMessage  # noqa: F401
-    from avd.director.review import Review  # noqa: F401
-    from avd.llm.ledger import CostEntry  # noqa: F401
-
+    _enable_foreign_keys(engine)
     Base.metadata.create_all(engine)
+    upgrade_sqlite_schema(engine)
+    if engine.dialect.name == "sqlite":
+        with engine.begin() as connection:
+            # Also cover engines supplied by callers with an existing connection.
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            for action in ("UPDATE", "DELETE"):
+                connection.exec_driver_sql(
+                    f"CREATE TRIGGER IF NOT EXISTS versions_no_{action.lower()} "
+                    f"BEFORE {action} ON versions BEGIN "
+                    "SELECT RAISE(ABORT, 'Version rows are immutable'); END"
+                )
+
+
+def upgrade_sqlite_schema(engine: Engine) -> None:
+    """Add the nullable audit/worker fields introduced after the initial schema."""
+
+    if engine.dialect.name != "sqlite":
+        return
+    additions = {
+        "characters": {
+            "consent_confirmed_by": "VARCHAR(255)",
+            "consent_confirmed_at": "DATETIME",
+        },
+        "voices": {
+            "consent_confirmed_by": "VARCHAR(255)",
+            "consent_confirmed_at": "DATETIME",
+        },
+        "jobs": {"claim_token": "VARCHAR(36)", "lease_expires_at": "DATETIME"},
+        "cost_entries": {
+            "job_id": "VARCHAR(36) REFERENCES jobs(id) ON DELETE SET NULL",
+            "attempt": "INTEGER",
+        },
+    }
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        tables = set(inspector.get_table_names())
+        for table, columns in additions.items():
+            if table not in tables:
+                continue
+            existing = {column["name"] for column in inspector.get_columns(table)}
+            for name, definition in columns.items():
+                if name not in existing:
+                    connection.exec_driver_sql(
+                        f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}'
+                    )
+        if "cost_entries" in tables:
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_cost_entries_job_attempt "
+                "ON cost_entries (job_id, attempt)"
+            )
 
 
 # Common aliases keep the helper convenient for app code and tests.
@@ -87,4 +150,5 @@ __all__ = [
     "get_engine",
     "get_session_factory",
     "init_db",
+    "upgrade_sqlite_schema",
 ]

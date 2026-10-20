@@ -59,6 +59,13 @@
             <button type="submit">保存角色</button>
           </form>
         </details>
+        <details><summary>＋ 生成虚构角色表</summary>
+          <form id="sheet-form" class="stack">
+            <label>角色名称<input name="name" required maxlength="255"></label>
+            <label>虚构外观描述<textarea name="appearance_prompt" rows="3" required placeholder="仅描述原创角色，不使用参考视频人物"></textarea></label>
+            <button type="submit" data-project>生成角色表</button>
+          </form>
+        </details>
         <details><summary>＋ 创建声音</summary>
           <form id="voice-form" class="stack">
             <label>声音名称<input name="name" required maxlength="255"></label>

@@ -2,13 +2,21 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from pydantic import BaseModel
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from avd.config import LLMRoute, ModelPrice, Settings
-from avd.llm import BudgetExceeded, BudgetGuard, ChatResponse, ConfirmationRequired, CostLedger, FakeProvider, LLMRouter
+from avd.llm import (
+    BudgetExceeded,
+    BudgetGuard,
+    ChatResponse,
+    ConfirmationRequired,
+    CostLedger,
+    FakeProvider,
+    LLMRouter,
+)
 from avd.llm.providers import ProviderConfigurationError
 from avd.llm.providers.openai import OpenAIProvider
 from avd.state.db import create_engine, create_session_factory, init_db
@@ -38,7 +46,9 @@ def test_default_role_routing_and_overrides() -> None:
     assert anthropic.calls[0]["model"] == "claude-opus-5-5"
     assert [call["model"] for call in openai.calls] == ["gpt-6.1-sol", "gpt-6.1-sol"]
     assert gemini.calls[0]["model"] == "configured-gemini"
-    custom = Settings(_env_file=None, llm_routes={"script": LLMRoute(provider="anthropic", model="relay-model")})
+    custom = Settings(
+        _env_file=None, llm_routes={"script": LLMRoute(provider="anthropic", model="relay-model")}
+    )
     assert LLMRouter(custom).route("script").model == "relay-model"
 
 
@@ -70,12 +80,20 @@ class ResponseSchema(BaseModel):
 
 def test_structured_repairs_once_without_mutating_messages(session: Session) -> None:
     project = ProjectRepo(session).create_project("structured", budget_limit=1)
-    fake = FakeProvider([
-        ChatResponse(content='{"title":"bad","count":"oops"}', input_tokens=100, output_tokens=20),
-        ChatResponse(content='{"title":"fixed","count":2}', input_tokens=150, output_tokens=25),
-    ])
-    ledger = CostLedger(session, {"gpt-6.1-sol": ModelPrice(input_per_million=2, output_per_million=4)})
-    router = LLMRouter(Settings(_env_file=None), providers={"openai": fake}, ledger=ledger, project=project)
+    fake = FakeProvider(
+        [
+            ChatResponse(
+                content='{"title":"bad","count":"oops"}', input_tokens=100, output_tokens=20
+            ),
+            ChatResponse(content='{"title":"fixed","count":2}', input_tokens=150, output_tokens=25),
+        ]
+    )
+    ledger = CostLedger(
+        session, {"gpt-6.1-sol": ModelPrice(input_per_million=2, output_per_million=4)}
+    )
+    router = LLMRouter(
+        Settings(_env_file=None), providers={"openai": fake}, ledger=ledger, project=project
+    )
     messages = [{"role": "user", "content": "give title and count"}]
     result = router.structured("script", messages, ResponseSchema)
     assert result == ResponseSchema(title="fixed", count=2)
@@ -84,11 +102,16 @@ def test_structured_repairs_once_without_mutating_messages(session: Session) -> 
     assert "did not validate" in fake.calls[1]["messages"][-1]["content"]
     entries = ledger.list(project.id)
     assert len(entries) == 2
-    assert sorted((entry.input_tokens, entry.output_tokens) for entry in entries) == [(100, 20), (150, 25)]
+    assert sorted((entry.input_tokens, entry.output_tokens) for entry in entries) == [
+        (100, 20),
+        (150, 25),
+    ]
     assert project.spent == pytest.approx(0.00068)
 
 
-def test_unknown_price_warns_and_registers_zero_cost(session: Session, caplog: pytest.LogCaptureFixture) -> None:
+def test_unknown_price_warns_and_registers_zero_cost(
+    session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
     project = ProjectRepo(session).create_project("zero")
     ledger = CostLedger(session)
     entry = ledger.record(project, "script", "openai", "unknown", 100, 20)
@@ -100,10 +123,13 @@ def test_unknown_price_warns_and_registers_zero_cost(session: Session, caplog: p
 
 def test_ledger_persists_and_uses_provider_specific_price(session: Session) -> None:
     project = ProjectRepo(session).create_project("ledger")
-    ledger = CostLedger(session, {
-        "model": ModelPrice(input_per_million=100),
-        "openai/model": ModelPrice(input_per_million=1, output_per_million=2),
-    })
+    ledger = CostLedger(
+        session,
+        {
+            "model": ModelPrice(input_per_million=100),
+            "openai/model": ModelPrice(input_per_million=1, output_per_million=2),
+        },
+    )
     ledger.record(project, "script", "openai", "model", 1_000_000, 500_000)
     session.commit()
     session.expire_all()
@@ -148,7 +174,12 @@ def test_budget_rejects_invalid_cost(cost: float) -> None:
 def test_router_budget_denial_does_not_call_provider(session: Session) -> None:
     project = ProjectRepo(session).create_project("blocked", budget_limit=0)
     fake = FakeProvider(["unused"])
-    router = LLMRouter(Settings(_env_file=None), providers={"openai": fake}, ledger=CostLedger(session), project=project)
+    router = LLMRouter(
+        Settings(_env_file=None),
+        providers={"openai": fake},
+        ledger=CostLedger(session),
+        project=project,
+    )
     with pytest.raises(BudgetExceeded):
         router.chat("script", [], estimated_cost=0.1)
     assert fake.calls == []
@@ -157,9 +188,13 @@ def test_router_budget_denial_does_not_call_provider(session: Session) -> None:
 
 def test_repair_rechecks_budget_after_first_response(session: Session) -> None:
     project = ProjectRepo(session).create_project("repair-budget", budget_limit=0.1)
-    fake = FakeProvider([ChatResponse(content="invalid", input_tokens=100_000), '{"title":"never","count":1}'])
+    fake = FakeProvider(
+        [ChatResponse(content="invalid", input_tokens=100_000), '{"title":"never","count":1}']
+    )
     router = LLMRouter(
-        Settings(_env_file=None), providers={"openai": fake}, project=project,
+        Settings(_env_file=None),
+        providers={"openai": fake},
+        project=project,
         ledger=CostLedger(session, {"gpt-6.1-sol": ModelPrice(input_per_million=1)}),
     )
     with pytest.raises(BudgetExceeded):

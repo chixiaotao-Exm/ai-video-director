@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from avd.config import Settings
 from avd.engine import RebuildEngine
 from avd.engine.rebuild import JOB_TYPES, _hash
-from avd.jobs import HandlerRegistry, Job, JobQueue
-from avd.llm import CostLedger, LLMRouter
+from avd.jobs import HandlerRegistry, Job, JobQueue, JobStatus
+from avd.llm import BudgetExceeded, CostLedger, LLMRouter
 from avd.llm.providers import Provider
 from avd.state.db import create_engine, create_session_factory, init_db
 from avd.state.models import Node, NodeKind, Project
@@ -19,7 +20,8 @@ from avd.state.models import Node, NodeKind, Project
 
 class Runtime:
     def __init__(
-        self, settings: Settings | None = None,
+        self,
+        settings: Settings | None = None,
         session_factory: Callable[[], Session] | None = None,
         providers: Mapping[str, Provider] | None = None,
     ) -> None:
@@ -27,19 +29,67 @@ class Runtime:
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.database = None
         if session_factory is None:
-            self.database = create_engine(self.settings.database_url, data_dir=self.settings.data_dir)
+            # Register application-layer tables without state importing its consumers.
+            from avd.director.models import ChatMessage  # noqa: F401
+            from avd.director.review import Review  # noqa: F401
+
+            self.database = create_engine(
+                self.settings.database_url, data_dir=self.settings.data_dir
+            )
             init_db(self.database)
             session_factory = create_session_factory(self.database)
         self.session_factory = session_factory
         self.providers = dict(providers or {})
         self.queue = JobQueue(self.session_factory)
-        self.engine = RebuildEngine(self.session_factory, self.queue, self.settings)
+        self.engine = RebuildEngine(
+            self.session_factory, self.queue, self.settings, before_schedule=self._check_schedule
+        )
 
-    def router(self, session: Session, project: Any, *, confirmed: bool = False) -> LLMRouter:
+    def _check_schedule(
+        self, session: Session, project: Project, node: Node, estimate: float
+    ) -> None:
+        from avd.director.review import budget_is_confirmed, require_review
+
+        require_review(session, project, "script" if node.kind == NodeKind.SHOT_FRAME else "frames")
+        self.engine.budget_guard.check(
+            project,
+            estimate,
+            confirmed=budget_is_confirmed(
+                session, project, estimate + self._reserved(session, project.id)
+            ),
+        )
+
+    def router(self, session: Session, project: Project, *, job_id: str | None = None) -> LLMRouter:
+        from avd.director.review import budget_is_confirmed
+
+        def confirmation(current: Project, estimate: float) -> bool:
+            reserved = self._reserved(session, current.id, exclude=job_id)
+            if (
+                current.budget_limit is not None
+                and current.spent + reserved + estimate > current.budget_limit
+            ):
+                raise BudgetExceeded("Pending work plus this call exceeds the project budget")
+            return budget_is_confirmed(session, current, estimate + reserved)
+
         return LLMRouter(
-            self.settings, providers=self.providers,
-            ledger=CostLedger(session, self.settings.model_prices), project=project,
-            confirmed=confirmed,
+            self.settings,
+            providers=self.providers,
+            ledger=CostLedger(session, self.settings.model_prices),
+            project=project,
+            confirmation_check=confirmation,
+        )
+
+    @staticmethod
+    def _reserved(session: Session, project_id: str, *, exclude: str | None = None) -> float:
+        return sum(
+            float(job.payload.get("estimated_cost", 0))
+            for job in session.scalars(
+                select(Job).where(
+                    Job.project_id == project_id,
+                    Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
+                )
+            )
+            if job.id != exclude
         )
 
     def build_registry(self) -> HandlerRegistry:
@@ -50,12 +100,27 @@ class Runtime:
         from avd.state.models import Project
         from avd.state.repo import ProjectRepo
 
-        registry = build_registry(self.settings)
+        def mark_paid(job: Job) -> None:
+            with self.session_factory() as session:
+                saved = session.get(Job, job.id)
+                if saved is None:
+                    raise LookupError("Job no longer exists")
+                payload = dict(saved.payload)
+                payload["_started_paid_attempts"] = sorted(
+                    set(payload.get("_started_paid_attempts", [])) | {job.attempts}
+                )
+                saved.payload = payload
+                session.commit()
+
+        registry = build_registry(self.settings, before_paid=mark_paid)
+        sheet_image_handler = registry.get("image_gen")
+        assert sheet_image_handler is not None
 
         def guard(handler: Callable[[Job], dict[str, Any]]) -> Callable[[Job], dict[str, Any]]:
             def execute(job: Job) -> dict[str, Any]:
                 self.check_job(job)
                 return handler(job)
+
             return execute
 
         for _, job_type in JOB_TYPES.values():
@@ -69,22 +134,40 @@ class Runtime:
                 if project is None:
                     raise KeyError("Authoring job project was not found")
                 repo = ProjectRepo(session)
-                router = self.router(session, project, confirmed=bool(job.payload.get("confirmed", False)))
+                router = self.router(session, project, job_id=job.id)
                 try:
                     if job.job_type == "analyze_video":
-                        template = AnalysisPipeline(repo, router, self.settings).analyze_video(project)
-                        result = {"summary": "Structure analysis ready for review", "template": template.model_dump(mode="json")}
+                        template = AnalysisPipeline(repo, router, self.settings).analyze_video(
+                            project
+                        )
+                        result = {
+                            "summary": "Structure analysis ready for review",
+                            "template": template.model_dump(mode="json"),
+                        }
                     else:
                         require_review(session, project, "structure")
                         if project.character is None or project.voice is None:
                             raise ValueError("Attach consented assets before writing a script")
                         agent = ScriptAgent(repo, router, self.settings)
+                        assert router.ledger is not None
+                        before_entries = {entry.id for entry in router.ledger.list(project.id)}
                         board = agent.write_storyboard(
                             StructureTemplate.model_validate(project.analysis_result),
-                            project.character, project.voice, job.payload["brief"], project=project,
+                            project.character,
+                            project.voice,
+                            job.payload["brief"],
+                            project=project,
                         )
-                        agent.apply_storyboard(project, board)
-                        result = {"summary": "Script ready for review", "storyboard": board.model_dump(mode="json")}
+                        cost = sum(
+                            entry.est_cost
+                            for entry in router.ledger.list(project.id)
+                            if entry.id not in before_entries and entry.role == "script"
+                        )
+                        agent.apply_storyboard(project, board, cost=cost)
+                        result = {
+                            "summary": "Script ready for review",
+                            "storyboard": board.model_dump(mode="json"),
+                        }
                 finally:
                     # Persist usage from completed paid calls even when validation fails.
                     session.commit()
@@ -92,26 +175,79 @@ class Runtime:
 
         registry.register("analyze_video", authoring)
         registry.register("write_script", authoring)
+        from avd.assets.sheets import make_sheet_handler
+
+        registry.register("character_sheet", make_sheet_handler(self, guard(sheet_image_handler)))
         return registry
 
     def check_job(self, job: Job) -> None:
         """Recheck reviews, consent and budget immediately before executor work."""
         from avd.director.review import budget_is_confirmed, require_review
 
+        if job.project_id:
+            if job.node_id:
+                self.engine._reconcile(job.project_id)
+            elif job.job_type == "character_sheet":
+                self.on_finished(job)
+
         with self.session_factory() as session:
-            node = session.get(Node, job.node_id)
-            if node is None:
+            node = session.get(Node, job.node_id) if job.node_id else None
+            project = node.project if node else session.get(Project, job.project_id)
+            if project is None or (node is None and job.job_type != "character_sheet"):
                 raise LookupError("Generation job has no project node")
-            project = node.project
-            if job.payload.get("recipe_hash") is not None and _hash(self.engine._effective_recipe(node)) != job.payload["recipe_hash"]:
+            snapshot = job.payload.get("recipe", {}).get("_execution")
+            if (
+                node is not None
+                and job.payload.get("recipe_hash") is not None
+                and _hash(self.engine._effective_recipe(node, execution=snapshot))
+                != job.payload["recipe_hash"]
+            ):
                 raise ValueError("Job recipe changed while queued; schedule the current recipe")
-            self.engine._consent(project, node)
-            require_review(session, project, "script" if node.kind == NodeKind.SHOT_FRAME else "frames")
+            if node is not None:
+                self.engine._consent(project, node)
+                require_review(
+                    session, project, "script" if node.kind == NodeKind.SHOT_FRAME else "frames"
+                )
             estimate = float(job.payload.get("estimated_cost", 0))
+            reserved = self._reserved(session, project.id, exclude=job.id)
+            if (
+                project.budget_limit is not None
+                and project.spent + estimate + reserved > project.budget_limit
+            ):
+                raise BudgetExceeded("Pending work plus this execution exceeds the project budget")
             self.engine.budget_guard.check(
-                project, estimate,
-                confirmed=budget_is_confirmed(session, project, estimate),
+                project,
+                estimate,
+                confirmed=budget_is_confirmed(session, project, estimate + reserved),
             )
+
+    def on_finished(self, job: Job) -> None:
+        """Publish generation nodes or account a global character-sheet attempt."""
+        if job.node_id:
+            self.engine.on_finished(job)
+            return
+        if job.job_type != "character_sheet" or not job.project_id:
+            return
+        with self.session_factory() as session:
+            saved = session.get(Job, job.id)
+            project = session.get(Project, job.project_id)
+            if saved is None or project is None:
+                return
+            for attempt in saved.payload.get("_started_paid_attempts", []):
+                if attempt <= saved.attempts:
+                    cost = float(saved.payload.get("estimated_cost", 0))
+                    if attempt == saved.attempts and saved.status == JobStatus.SUCCEEDED:
+                        cost = float((saved.result or {}).get("cost", cost))
+                    CostLedger(session).record_attempt(
+                        project,
+                        job_id=saved.id,
+                        attempt=attempt,
+                        role="character_sheet",
+                        provider="openai",
+                        model=saved.model_key or self.settings.image_model,
+                        cost=cost,
+                    )
+            session.commit()
 
     def close(self) -> None:
         if self.database is not None:

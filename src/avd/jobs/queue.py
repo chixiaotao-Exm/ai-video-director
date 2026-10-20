@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timedelta, timezone
-from collections.abc import Callable
+import math
 import threading
+import uuid
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select, text, update
+from sqlalchemy import or_, select, text, update
 from sqlalchemy.orm import Session
 
 from .models import Job, JobLane, JobStatus
@@ -34,11 +36,20 @@ def _next_created_at() -> datetime:
         return current
 
 
+class ClaimLostError(ValueError):
+    """The worker no longer owns the attempt it is trying to update."""
+
+
 class JobQueue:
     """Persist and claim jobs using a caller-provided session factory."""
 
-    def __init__(self, session_factory: Callable[[], Session]):
+    def __init__(
+        self, session_factory: Callable[[], Session], *, lease_seconds: float = 30.0
+    ) -> None:
+        if not math.isfinite(lease_seconds) or lease_seconds <= 0:
+            raise ValueError("lease_seconds must be finite and greater than zero")
         self.session_factory = session_factory
+        self.lease_seconds = lease_seconds
 
     def submit(
         self,
@@ -105,9 +116,33 @@ class JobQueue:
                 update(Job)
                 .where(Job.id == job_id, Job.status == JobStatus.QUEUED)
                 .values(status=JobStatus.CANCELLED, finished_at=_utc_now())
+                .returning(Job.id)
             )
+            cancelled = result.scalar_one_or_none() is not None
             session.commit()
-            return result.rowcount == 1
+            return cancelled
+
+    def retry(self, job_id: str, *, additional_attempts: int = 3) -> Job:
+        """Give a failed/cancelled job more tries without reusing attempt numbers."""
+
+        if additional_attempts < 1:
+            raise ValueError("additional_attempts must be at least 1")
+        with self.session_factory() as session:
+            self._begin_write_transaction(session)
+            job = session.get(Job, job_id)
+            if job is None:
+                raise KeyError(f"Job {job_id} was not found")
+            if job.status not in (JobStatus.FAILED, JobStatus.CANCELLED):
+                raise ValueError(f"Job {job_id} is not failed or cancelled")
+            job.status = JobStatus.QUEUED
+            job.max_attempts = job.attempts + additional_attempts
+            job.error = None
+            job.result = None
+            job.started_at = None
+            job.finished_at = None
+            job.claim_token = None
+            job.lease_expires_at = None
+            return self._commit_and_detach(session, job)
 
     def claim_next(
         self,
@@ -116,12 +151,24 @@ class JobQueue:
     ) -> Job | None:
         requested_lane = JobLane(lane)
         with self.session_factory() as session:
-            self._begin_claim_transaction(session)
+            self._begin_write_transaction(session)
+            # The occupancy check and claim share SQLite's write transaction, so
+            # workers in separate processes cannot occupy the GPU lane together.
+            if requested_lane == JobLane.GPU:
+                running_gpu = session.scalar(
+                    select(Job.id)
+                    .where(Job.lane == JobLane.GPU, Job.status == JobStatus.RUNNING)
+                    .limit(1)
+                )
+                if running_gpu is not None:
+                    session.rollback()
+                    return None
             candidates = list(
                 session.scalars(
                     select(Job).where(
                         Job.lane == requested_lane,
                         Job.status == JobStatus.QUEUED,
+                        Job.attempts < Job.max_attempts,
                     )
                 ).all()
             )
@@ -136,27 +183,64 @@ class JobQueue:
             job.attempts += 1
             job.started_at = _utc_now()
             job.finished_at = None
-            session.commit()
-            session.expunge(job)
-            return job
+            job.claim_token = str(uuid.uuid4())
+            job.lease_expires_at = job.started_at + timedelta(seconds=self.lease_seconds)
+            return self._commit_and_detach(session, job)
 
-    def complete(self, job_id: str, result: dict[str, Any]) -> Job:
+    def heartbeat(self, job_id: str, claim_token: str) -> bool:
+        """Renew a running attempt's lease; return False if ownership was lost."""
+
         with self.session_factory() as session:
-            job = self._get_running(session, job_id)
+            renewed = (
+                session.execute(
+                    update(Job)
+                    .where(
+                        Job.id == job_id,
+                        Job.status == JobStatus.RUNNING,
+                        Job.claim_token == claim_token,
+                    )
+                    .values(lease_expires_at=_utc_now() + timedelta(seconds=self.lease_seconds))
+                    .returning(Job.id)
+                ).scalar_one_or_none()
+                is not None
+            )
+            session.commit()
+            return renewed
+
+    def complete(
+        self,
+        job_id: str,
+        result: dict[str, Any],
+        *,
+        claim_token: str | None = None,
+    ) -> Job:
+        with self.session_factory() as session:
+            self._begin_write_transaction(session)
+            job = self._get_running(session, job_id, claim_token)
             job.status = JobStatus.SUCCEEDED
             job.result = copy.deepcopy(result)
             job.error = None
             job.finished_at = _utc_now()
-            session.commit()
-            session.expunge(job)
-            return job
+            job.claim_token = None
+            job.lease_expires_at = None
+            return self._commit_and_detach(session, job)
 
-    def fail(self, job_id: str, error: str, *, retry: bool = True) -> Job:
+    def fail(
+        self,
+        job_id: str,
+        error: str,
+        *,
+        retry: bool = True,
+        claim_token: str | None = None,
+    ) -> Job:
         with self.session_factory() as session:
-            job = self._get_running(session, job_id)
+            self._begin_write_transaction(session)
+            job = self._get_running(session, job_id, claim_token)
             should_retry = retry and job.attempts < job.max_attempts
             job.error = error
             job.result = None
+            job.claim_token = None
+            job.lease_expires_at = None
             if should_retry:
                 job.status = JobStatus.QUEUED
                 job.started_at = None
@@ -164,20 +248,28 @@ class JobQueue:
             else:
                 job.status = JobStatus.FAILED
                 job.finished_at = _utc_now()
-            session.commit()
-            session.expunge(job)
-            return job
+            return self._commit_and_detach(session, job)
 
-    def recover_stale(self) -> int:
+    def recover_stale(self, *, force: bool = False) -> int:
+        """Recover expired leases; force only after all prior workers have stopped.
+
+        Legacy running rows with no lease are also stale. Active leases are left
+        alone unless the caller explicitly confirms exclusive recovery via force.
+        """
+
         with self.session_factory() as session:
-            stale_jobs = list(
-                session.scalars(
-                    select(Job).where(Job.status == JobStatus.RUNNING)
-                ).all()
-            )
+            self._begin_write_transaction(session)
             recovered_at = _utc_now()
+            statement = select(Job).where(Job.status == JobStatus.RUNNING)
+            if not force:
+                statement = statement.where(
+                    or_(Job.lease_expires_at <= recovered_at, Job.lease_expires_at.is_(None))
+                )
+            stale_jobs = list(session.scalars(statement).all())
             for job in stale_jobs:
                 job.started_at = None
+                job.claim_token = None
+                job.lease_expires_at = None
                 if job.attempts >= job.max_attempts:
                     job.status = JobStatus.FAILED
                     job.error = "worker crashed"
@@ -200,7 +292,7 @@ class JobQueue:
         return (-job.priority, model_preference, job.created_at, job.id)
 
     @staticmethod
-    def _begin_claim_transaction(session: Session) -> None:
+    def _begin_write_transaction(session: Session) -> None:
         bind = session.get_bind()
         if bind.dialect.name == "sqlite":
             session.execute(text("BEGIN IMMEDIATE"))
@@ -208,13 +300,27 @@ class JobQueue:
             session.begin()
 
     @staticmethod
-    def _get_running(session: Session, job_id: str) -> Job:
+    def _get_running(session: Session, job_id: str, claim_token: str | None) -> Job:
         job = session.get(Job, job_id)
         if job is None:
             raise KeyError(f"Job {job_id} was not found")
+        if claim_token is not None and (
+            job.status != JobStatus.RUNNING or job.claim_token != claim_token
+        ):
+            raise ClaimLostError(f"Job {job_id} is no longer owned by this attempt")
         if job.status != JobStatus.RUNNING:
             raise ValueError(f"Job {job_id} is not running")
         return job
 
+    @staticmethod
+    def _commit_and_detach(session: Session, job: Job) -> Job:
+        session.flush()
+        # Capture the attempt while still holding the write transaction. Detach
+        # before commit so even expire_on_commit=True preserves that snapshot.
+        session.refresh(job)
+        session.expunge(job)
+        session.commit()
+        return job
 
-__all__ = ["JobQueue"]
+
+__all__ = ["ClaimLostError", "JobQueue"]

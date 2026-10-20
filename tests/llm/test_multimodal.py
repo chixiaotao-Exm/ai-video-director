@@ -18,10 +18,14 @@ class FakeModels:
     def generate_content(self, **kwargs: Any) -> SimpleNamespace:
         self.calls.append(kwargs)
         return SimpleNamespace(
-            candidates=[SimpleNamespace(
-                content=SimpleNamespace(parts=[SimpleNamespace(text="video seen", function_call=None)]),
-                finish_reason="STOP",
-            )],
+            candidates=[
+                SimpleNamespace(
+                    content=SimpleNamespace(
+                        parts=[SimpleNamespace(text="video seen", function_call=None)]
+                    ),
+                    finish_reason="STOP",
+                )
+            ],
             usage_metadata=SimpleNamespace(prompt_token_count=10, candidates_token_count=2),
         )
 
@@ -34,17 +38,26 @@ class FakeFiles:
 
     def upload(self, **kwargs: Any) -> SimpleNamespace:
         self.uploads.append(kwargs)
-        return SimpleNamespace(name="files/video-1", uri="https://files.invalid/video-1", state=SimpleNamespace(name=self.state))
+        return SimpleNamespace(
+            name="files/video-1",
+            uri="https://files.invalid/video-1",
+            state=SimpleNamespace(name=self.state),
+        )
 
     def delete(self, *, name: str) -> None:
         self.deleted.append(name)
 
 
 def messages(video: Path) -> list[dict[str, Any]]:
-    return [{"role": "user", "content": [
-        {"type": "text", "text": "Describe structure, not identity."},
-        {"type": "video", "path": str(video), "mime_type": "video/mp4"},
-    ]}]
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe structure, not identity."},
+                {"type": "video", "path": str(video), "mime_type": "video/mp4"},
+            ],
+        }
+    ]
 
 
 def test_small_video_is_transmitted_as_inline_bytes(tmp_path: Path) -> None:

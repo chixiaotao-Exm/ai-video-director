@@ -6,6 +6,7 @@ const API_ROUTES = Object.freeze({
   source: "/projects/{project_id}/source",
   uploads: "/uploads",
   characters: "/characters",
+  sheet: "/projects/{project_id}/character-sheet",
   voices: "/voices",
   characterConsent: "/characters/{asset_id}/consent",
   voiceConsent: "/voices/{asset_id}/consent",
@@ -245,7 +246,7 @@ function renderCheckpoints() {
   STAGES.forEach(([stage, title], index) => {
     const review = state.project?.reviews?.[stage];
     const card = el("div", null, `checkpoint${review?.approved ? " approved" : ""}`);
-    card.append(el("div", `CHECKPOINT 0${index + 1}`, "step-label"), el("h3", title));
+    card.append(el("div", index === 0 ? "STRUCTURE REVIEW" : `CHECKPOINT 0${index}`, "step-label"), el("h3", title));
     card.append(el("p", review?.approved ? `已由 ${review.approved_by} 确认` : stageReady(stage) ? "请查看当前内容，再确认通过。" : "等待内容完成与上游就绪。"));
     const button = el("button", review?.approved ? "已确认 ✓" : `确认${title}`);
     button.type = "button"; button.dataset.stage = stage;
@@ -429,6 +430,16 @@ function renderJobs() {
       title.append(el("small", ` · ${job.id.slice(0, 8)} · 尝试 ${job.attempts}/${job.max_attempts}`));
       row.append(title, el("span", STATUS_LABELS[job.status] || job.status, `badge ${job.status}`));
       if (job.error) row.append(el("p", job.error, "job-error"));
+      if (job.job_type === "character_sheet" && job.result?.outputs?.image) {
+        const preview = el("div", null, "media-preview");
+        renderMedia(preview, job.result.outputs);
+        const select = el("button", "查看并授权此角色");
+        select.addEventListener("click", () => void runAction(select, async () => {
+          await loadAssets({character: job.result.character_id, consent: `character:${job.result.character_id}`});
+          $("#consent-panel").open = true;
+        }));
+        row.append(preview, select);
+      }
       container.append(row);
     });
   });
@@ -507,6 +518,12 @@ bindForm("#voice-form", async (form) => {
   $("#consent-panel").open = true;
   notify("声音已保存。请在素材授权表单中明确确认授权后再使用。");
 });
+bindForm("#sheet-form", async (form) => {
+  const values = new FormData(form);
+  const result = await request("sheet", {method: "POST", params: {project_id: state.projectId}, body: {name: values.get("name"), appearance_prompt: values.get("appearance_prompt")}});
+  notify(`角色表任务已排队：${result.job_id}。完成后查看图片并确认授权。`);
+  await refreshProject();
+});
 bindForm("#consent-form", async (form) => {
   const values = new FormData(form);
   if (!form.elements.confirmed.checked) throw new Error("请先勾选并确认素材授权声明。");
@@ -555,7 +572,7 @@ $("#consent-select").addEventListener("change", () => {
   $("#consent-form").elements.confirmed.checked = false; updateControls();
 });
 for (const [id, tool] of [["#analyze", "analyze_video"], ["#frames", "generate_frames"], ["#rebuild", "rebuild"]]) {
-  $(id).addEventListener("click", () => void runAction($(id), () => callTool(tool)));
+  $(id).addEventListener("click", () => void runAction($(id), () => callTool(tool, tool === "rebuild" ? {retry_failed: true} : {})));
 }
 $("#chat-message").addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {

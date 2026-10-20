@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-import json
 from pathlib import Path
-import re
 from typing import Any
-
 
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 _EXACT_PLACEHOLDER_RE = re.compile(r"^\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$")
@@ -133,7 +132,9 @@ def load_workflow(
     try:
         path.relative_to(directory.resolve())
     except ValueError as exc:
-        raise WorkflowTemplateError(f"workflow template is outside template directory: {name!r}") from exc
+        raise WorkflowTemplateError(
+            f"workflow template is outside template directory: {name!r}"
+        ) from exc
     if not path.is_file():
         raise FileNotFoundError(f"workflow template not found: {path}")
     try:

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import importlib
+from copy import deepcopy
 from typing import Any
 
 from .base import ChatResponse, ProviderConfigurationError, ToolCall
@@ -52,25 +52,38 @@ class AnthropicProvider:
                 system.append(str(content))
                 continue
             if role == "tool":
-                converted.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": message["tool_call_id"],
-                        "content": content,
-                    }],
-                })
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": message["tool_call_id"],
+                                "content": content,
+                            }
+                        ],
+                    }
+                )
                 continue
             if message.get("tool_calls"):
                 blocks = [{"type": "text", "text": content}] if content else []
                 blocks.extend(
-                    {"type": "tool_use", "id": call["id"], "name": call["name"], "input": call["arguments"]}
+                    {
+                        "type": "tool_use",
+                        "id": call["id"],
+                        "name": call["name"],
+                        "input": call["arguments"],
+                    }
                     for call in message["tool_calls"]
                 )
                 converted.append({"role": role, "content": blocks})
             else:
                 converted.append({"role": role, "content": deepcopy(content)})
-        kwargs: dict[str, Any] = {"model": model, "messages": converted, "max_tokens": self.max_output_tokens}
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": converted,
+            "max_tokens": self.max_output_tokens,
+        }
         if system:
             kwargs["system"] = "\n\n".join(system)
         if tools:
@@ -80,7 +93,8 @@ class AnthropicProvider:
             content="".join(block.text for block in result.content if block.type == "text"),
             tool_calls=[
                 ToolCall(id=block.id, name=block.name, arguments=block.input)
-                for block in result.content if block.type == "tool_use"
+                for block in result.content
+                if block.type == "tool_use"
             ],
             input_tokens=result.usage.input_tokens,
             output_tokens=result.usage.output_tokens,

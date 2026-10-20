@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 import json
 import mimetypes
-from pathlib import Path
 import time
+import uuid
+from collections.abc import Iterable, Mapping
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
-import uuid
 
 import httpx
 
@@ -99,9 +99,7 @@ class ComfyUIClient:
         payload = self._json(response, "upload response")
         name = payload.get("name")
         if not isinstance(name, str) or not name:
-            raise ComfyUIProtocolError(
-                "ComfyUI upload response did not include a non-empty 'name'"
-            )
+            raise ComfyUIProtocolError("ComfyUI upload response did not include a non-empty 'name'")
         return name
 
     def submit(self, workflow: Mapping[str, Any]) -> str:
@@ -119,9 +117,7 @@ class ComfyUIClient:
         prompt_error = payload.get("error")
         if node_errors or prompt_error:
             detail = node_errors if node_errors else prompt_error
-            raise ComfyUINodeError(
-                self._format_node_errors(detail), node_errors=detail
-            )
+            raise ComfyUINodeError(self._format_node_errors(detail), node_errors=detail)
         prompt_id = payload.get("prompt_id")
         if not isinstance(prompt_id, str) or not prompt_id:
             raise ComfyUIProtocolError(
@@ -170,9 +166,7 @@ class ComfyUIClient:
             raise ValueError("prompt_id must not be empty")
         record = self._history_record(prompt_id)
         if record is None:
-            raise ComfyUIProtocolError(
-                f"ComfyUI has no history for prompt {prompt_id!r}"
-            )
+            raise ComfyUIProtocolError(f"ComfyUI has no history for prompt {prompt_id!r}")
         self._raise_for_history_errors(record)
         outputs = record.get("outputs")
         if not isinstance(outputs, Mapping):
@@ -262,9 +256,7 @@ class ComfyUIClient:
                     node_errors = node_errors or message
                     break
         if node_errors:
-            raise ComfyUINodeError(
-                cls._format_node_errors(node_errors), node_errors=node_errors
-            )
+            raise ComfyUINodeError(cls._format_node_errors(node_errors), node_errors=node_errors)
 
     @staticmethod
     def _format_node_errors(node_errors: Any) -> str:
@@ -327,9 +319,7 @@ class ComfyUIClient:
         try:
             payload = response.json()
         except (ValueError, json.JSONDecodeError) as exc:
-            raise ComfyUIProtocolError(
-                f"ComfyUI {description} was not valid JSON"
-            ) from exc
+            raise ComfyUIProtocolError(f"ComfyUI {description} was not valid JSON") from exc
         if not isinstance(payload, dict):
             raise ComfyUIProtocolError(f"ComfyUI {description} must be a JSON object")
         return payload

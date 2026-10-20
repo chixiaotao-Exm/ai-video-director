@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from html.parser import HTMLParser
 import re
+from html.parser import HTMLParser
 
 import pytest
 
@@ -68,6 +68,7 @@ def test_every_ui_route_and_method_exists_in_openapi(client: TestClient) -> None
         "source": {"post"},
         "uploads": {"post"},
         "characters": {"get", "post"},
+        "sheet": {"post"},
         "voices": {"get", "post"},
         "characterConsent": {"post"},
         "voiceConsent": {"post"},

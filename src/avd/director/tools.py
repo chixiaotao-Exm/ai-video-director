@@ -31,10 +31,17 @@ class EmptyInput(ToolInput):
     pass
 
 
+class RebuildInput(ToolInput):
+    retry_failed: bool = False
+
+
 class CharacterInput(ToolInput):
     name: str = Field(min_length=1, max_length=255)
-    reference_images: dict[Literal["front", "side", "half", "full"], str]
+    reference_images: dict[Literal["front", "side", "half", "full"], str] = Field(
+        default_factory=dict
+    )
     appearance_prompt: str = Field(min_length=1)
+    generate_sheet: bool = False
 
 
 class VoiceDefaults(ToolInput):
@@ -63,7 +70,9 @@ class ShotChanges(ToolInput):
 
     @model_validator(mode="after")
     def nonempty(self) -> Self:
-        if not self.model_fields_set or any(getattr(self, key) is None for key in self.model_fields_set):
+        if not self.model_fields_set or any(
+            getattr(self, key) is None for key in self.model_fields_set
+        ):
             raise ValueError("Supply at least one non-null shot change")
         return self
 
@@ -82,8 +91,14 @@ class RevertInput(NodeInput):
 
 
 _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
-    "analyze_video": (EmptyInput, "Queue analysis of the uploaded reference video; return a job ID."),
-    "create_character": (CharacterInput, "Create an unconsented character from uploaded image paths."),
+    "analyze_video": (
+        EmptyInput,
+        "Queue analysis of the uploaded reference video; return a job ID.",
+    ),
+    "create_character": (
+        CharacterInput,
+        "Create an unconsented character from uploads, or queue a fictional sheet with generate_sheet=true.",
+    ),
     "create_voice": (VoiceInput, "Create an unconsented voice from uploaded sample paths."),
     "write_script": (ScriptInput, "Queue an original storyboard after human structure approval."),
     "update_shot": (UpdateShotInput, "Edit one shot and dirty only affected downstream nodes."),
@@ -94,7 +109,10 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
     "build_subtitles": (EmptyInput, "Queue subtitles after human frame approval."),
     "render_final": (EmptyInput, "Queue final assembly after human frame approval."),
     "plan_rebuild": (EmptyInput, "List dirty nodes in dependency order without starting work."),
-    "rebuild": (EmptyInput, "Queue approved incremental work, pausing for first-frame review."),
+    "rebuild": (
+        RebuildInput,
+        "Queue approved incremental work; explicitly retry failed nodes if requested.",
+    ),
     "revert": (RevertInput, "Restore a version belonging to this project's node."),
     "list_versions": (NodeInput, "List immutable versions belonging to this project's node."),
     "get_project_status": (EmptyInput, "Read this project's node, review and job progress."),
@@ -102,9 +120,12 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
 }
 
 _GENERATORS = {
-    "generate_frames": NodeKind.SHOT_FRAME, "generate_videos": NodeKind.SHOT_VIDEO,
-    "generate_voiceover": NodeKind.VOICEOVER, "run_lipsync": NodeKind.LIPSYNC,
-    "build_subtitles": NodeKind.SUBTITLES, "render_final": NodeKind.FINAL,
+    "generate_frames": NodeKind.SHOT_FRAME,
+    "generate_videos": NodeKind.SHOT_VIDEO,
+    "generate_voiceover": NodeKind.VOICEOVER,
+    "run_lipsync": NodeKind.LIPSYNC,
+    "build_subtitles": NodeKind.SUBTITLES,
+    "render_final": NodeKind.FINAL,
 }
 
 
@@ -126,9 +147,10 @@ class DirectorTools:
 
     @staticmethod
     def schemas() -> list[dict[str, Any]]:
-        return [{"name": name, "description": description,
-                 "input_schema": schema.model_json_schema()}
-                for name, (schema, description) in _TOOLS.items()]
+        return [
+            {"name": name, "description": description, "input_schema": schema.model_json_schema()}
+            for name, (schema, description) in _TOOLS.items()
+        ]
 
     def _project(self, session: Session) -> Project:
         project = session.get(Project, self.project_id)
@@ -139,8 +161,14 @@ class DirectorTools:
     def _uploaded_path(self, value: str) -> str:
         relative = Path(value)
         windows = PureWindowsPath(value)
-        if (not value or relative.is_absolute() or windows.drive or windows.root
-                or ".." in relative.parts or ".." in windows.parts):
+        if (
+            not value
+            or relative.is_absolute()
+            or windows.drive
+            or windows.root
+            or ".." in relative.parts
+            or ".." in windows.parts
+        ):
             raise ValueError("Asset paths must be relative uploaded media paths")
         root = self.runtime.settings.data_dir.expanduser().resolve()
         uploaded = (root / "uploads").resolve()
@@ -153,17 +181,41 @@ class DirectorTools:
 
     @staticmethod
     def _pending(session: Session, project: Project) -> list[Job]:
-        return list(session.scalars(select(Job).where(
-            Job.project_id == project.id,
-            Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
-        )).all())
+        return list(
+            session.scalars(
+                select(Job).where(
+                    Job.project_id == project.id,
+                    Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
+                )
+            ).all()
+        )
 
     def execute(self, name: str, args: dict[str, Any]) -> str:
         if name not in _TOOLS:
             raise ValueError(f"Unknown director tool: {name}")
         parsed = _TOOLS[name][0].model_validate(args)
+        if (
+            name == "create_character"
+            and isinstance(parsed, CharacterInput)
+            and parsed.generate_sheet
+        ):
+            from avd.assets.sheets import submit_character_sheet
+
+            if parsed.reference_images:
+                raise ValueError("Generated fictional sheets accept only a text prompt")
+            job_id = submit_character_sheet(
+                self.runtime, self.project_id, parsed.name, parsed.appearance_prompt
+            )
+            return _summary(
+                {
+                    "job_id": job_id,
+                    "message": "Character sheet queued for human review and consent.",
+                }
+            )
         if name in _GENERATORS or name == "rebuild":
-            return self._generate(name)
+            return self._generate(
+                name, retry_failed=isinstance(parsed, RebuildInput) and parsed.retry_failed
+            )
         with self.runtime.session_factory() as session:
             project = self._project(session)
             repo = ProjectRepo(session)
@@ -171,59 +223,110 @@ class DirectorTools:
                 result = self._authoring(session, project, name, parsed)
             elif name == "create_character":
                 assert isinstance(parsed, CharacterInput)
-                paths = {view: self._uploaded_path(path) for view, path in parsed.reference_images.items()}
-                asset = AssetLibrary(session, AssetStorage(self.runtime.settings.data_dir)).create_character(
-                    parsed.name, paths, parsed.appearance_prompt
-                )
+                paths: dict[str, str] = {
+                    view: self._uploaded_path(path)
+                    for view, path in parsed.reference_images.items()
+                }
+                asset = AssetLibrary(
+                    session, AssetStorage(self.runtime.settings.data_dir)
+                ).create_character(parsed.name, paths, parsed.appearance_prompt)
                 result = {"character_id": asset.id, "consent_required": True}
             elif name == "create_voice":
                 assert isinstance(parsed, VoiceInput)
-                paths = [self._uploaded_path(path) for path in parsed.sample_paths]
-                voice = AssetLibrary(session, AssetStorage(self.runtime.settings.data_dir)).create_voice(
-                    parsed.name, paths, parsed.engine, parsed.engine_voice_id,
+                samples = [self._uploaded_path(path) for path in parsed.sample_paths]
+                voice = AssetLibrary(
+                    session, AssetStorage(self.runtime.settings.data_dir)
+                ).create_voice(
+                    parsed.name,
+                    samples,
+                    parsed.engine,
+                    parsed.engine_voice_id,
                     default_params=parsed.default_params.model_dump(),
                 )
                 result = {"voice_id": voice.id, "consent_required": True}
             elif name == "update_shot":
                 assert isinstance(parsed, UpdateShotInput)
-                nodes = update_shot(project, parsed.shot_index,
-                                    parsed.changes.model_dump(exclude_unset=True), repo=repo)
-                result = {"updated_nodes": [node.id for node in nodes],
-                          "message": "Shot updated; review the revised script before regeneration."}
+                nodes = update_shot(
+                    project,
+                    parsed.shot_index,
+                    parsed.changes.model_dump(exclude_unset=True),
+                    repo=repo,
+                )
+                result = {
+                    "updated_nodes": [node.id for node in nodes],
+                    "message": "Shot updated; review the revised script before regeneration.",
+                }
             elif name in {"revert", "list_versions"}:
                 assert isinstance(parsed, NodeInput)
                 node = project_node(session, project, parsed.node_id)
                 if name == "revert":
                     assert isinstance(parsed, RevertInput)
                     version = repo.revert(node, parsed.version_number)
-                    result = {"node_id": node.id, "version": version.number,
-                              "message": "Version restored; downstream nodes require rebuild."}
+                    result = {
+                        "node_id": node.id,
+                        "version": version.number,
+                        "message": "Version restored; downstream nodes require rebuild.",
+                    }
                 else:
-                    result = [{"number": item.number, "id": item.id, "outputs": item.output_paths,
-                               "note": item.note, "cost": item.cost}
-                              for item in repo.list_versions(node)]
+                    result = [
+                        {
+                            "number": item.number,
+                            "id": item.id,
+                            "outputs": item.output_paths,
+                            "note": item.note,
+                            "cost": item.cost,
+                        }
+                        for item in repo.list_versions(node)
+                    ]
             elif name == "plan_rebuild":
-                result = [{"id": node.id, "kind": node.kind.value, "shot_index": node.shot_index}
-                          for node in repo.plan_rebuild(project)]
+                result = [
+                    {"id": node.id, "kind": node.kind.value, "shot_index": node.shot_index}
+                    for node in repo.plan_rebuild(project)
+                ]
             elif name == "get_project_status":
                 result = {
-                    "project_id": project.id, "title": project.title,
-                    "nodes": [{"id": node.id, "kind": node.kind.value, "shot_index": node.shot_index,
-                               "status": node.status.value, "version_id": node.current_version_id}
-                              for node in project.nodes],
+                    "project_id": project.id,
+                    "title": project.title,
+                    "nodes": [
+                        {
+                            "id": node.id,
+                            "kind": node.kind.value,
+                            "shot_index": node.shot_index,
+                            "status": node.status.value,
+                            "version_id": node.current_version_id,
+                        }
+                        for node in project.nodes
+                    ],
                     "reviews": review_status(session, project),
-                    "jobs": [{"id": job.id, "type": job.job_type, "status": job.status.value,
-                              "error": job.error} for job in session.scalars(select(Job).where(
-                                  Job.project_id == project.id
-                              ).order_by(Job.created_at.desc()).limit(20)).all()],
+                    "jobs": [
+                        {
+                            "id": job.id,
+                            "type": job.job_type,
+                            "status": job.status.value,
+                            "error": job.error,
+                        }
+                        for job in session.scalars(
+                            select(Job)
+                            .where(Job.project_id == project.id)
+                            .order_by(Job.created_at.desc())
+                            .limit(20)
+                        ).all()
+                    ],
                 }
             else:
-                reserved = sum(float(job.payload.get("estimated_cost", 0))
-                               for job in self._pending(session, project))
-                result = {"budget_limit": project.budget_limit, "spent": project.spent,
-                          "reserved": reserved, "remaining": None if project.budget_limit is None
-                          else project.budget_limit - project.spent - reserved,
-                          "confirm_threshold": self.runtime.settings.confirm_threshold}
+                reserved = sum(
+                    float(job.payload.get("estimated_cost", 0))
+                    for job in self._pending(session, project)
+                )
+                result = {
+                    "budget_limit": project.budget_limit,
+                    "spent": project.spent,
+                    "reserved": reserved,
+                    "remaining": None
+                    if project.budget_limit is None
+                    else project.budget_limit - project.spent - reserved,
+                    "confirm_threshold": self.runtime.settings.confirm_threshold,
+                }
             session.commit()
             return _summary(result)
 
@@ -249,17 +352,26 @@ class DirectorTools:
         estimate = self.runtime.settings.job_estimated_costs.get(name, 0.0)
         reserved = sum(float(job.payload.get("estimated_cost", 0)) for job in pending)
         confirmed = budget_is_confirmed(session, project, estimate + reserved)
-        BudgetGuard(self.runtime.settings.confirm_threshold).check(project, estimate, confirmed=confirmed)
-        if project.budget_limit is not None and project.spent + reserved + estimate > project.budget_limit:
+        BudgetGuard(self.runtime.settings.confirm_threshold).check(
+            project, estimate, confirmed=confirmed
+        )
+        if (
+            project.budget_limit is not None
+            and project.spent + reserved + estimate > project.budget_limit
+        ):
             raise BudgetExceeded("Pending work plus this job exceeds the project budget")
         payload.update(estimated_cost=estimate, confirmed=confirmed)
         job_id = self.runtime.queue.submit(
-            "api", name, payload, project_id=project.id,
-            model_key=self.runtime.settings.llm_route(role).model, session=session,
+            "api",
+            name,
+            payload,
+            project_id=project.id,
+            model_key=self.runtime.settings.llm_route(role).model,
+            session=session,
         )
         return {"job_id": job_id, "status": "queued"}
 
-    def _generate(self, name: str) -> str:
+    def _generate(self, name: str, *, retry_failed: bool = False) -> str:
         waiting = False
         with self.runtime.session_factory() as session:
             project = self._project(session)
@@ -278,16 +390,34 @@ class DirectorTools:
                 require_review(session, project, "frames")
                 kinds = {_GENERATORS[name]}
             plan = ProjectRepo(session).plan_rebuild(project)
-            estimate = sum(self.runtime.engine.estimate_cost(node) for node in plan if node.kind in kinds)
-            reserved = sum(float(job.payload.get("estimated_cost", 0))
-                           for job in self._pending(session, project))
+            if retry_failed:
+                plan.extend(node for node in project.nodes if node.status == "failed")
+            estimate = sum(
+                self.runtime.engine.estimate_cost(node) for node in plan if node.kind in kinds
+            )
+            reserved = sum(
+                float(job.payload.get("estimated_cost", 0))
+                for job in self._pending(session, project)
+            )
             confirmed = budget_is_confirmed(session, project, estimate + reserved)
-            BudgetGuard(self.runtime.settings.confirm_threshold).check(project, estimate, confirmed=confirmed)
-            if project.budget_limit is not None and project.spent + reserved + estimate > project.budget_limit:
+            BudgetGuard(self.runtime.settings.confirm_threshold).check(
+                project, estimate, confirmed=confirmed
+            )
+            if (
+                project.budget_limit is not None
+                and project.spent + reserved + estimate > project.budget_limit
+            ):
                 raise BudgetExceeded("Pending work plus this batch exceeds the project budget")
-        job_ids = self.runtime.engine.rebuild(self.project_id, kinds=kinds, confirmed=confirmed)
-        message = "First frames queued; human frame approval is required before further generation." if waiting else (
-            "Generation jobs queued." if job_ids else "No new ready work; inspect project status."
+        schedule = self.runtime.engine.retry_failed if retry_failed else self.runtime.engine.rebuild
+        job_ids = schedule(self.project_id, kinds=kinds, confirmed=confirmed)
+        message = (
+            "First frames queued; human frame approval is required before further generation."
+            if waiting
+            else (
+                "Generation jobs queued."
+                if job_ids
+                else "No new ready work; inspect project status."
+            )
         )
         return _summary({"job_ids": job_ids, "message": message})
 

@@ -42,4 +42,12 @@ class ProviderConfigurationError(ValueError):
     """A live provider is missing its SDK, credentials, or route configuration."""
 
 
+class ProviderResponseError(ValueError):
+    """A completed response could not be normalized; usage still must be billed."""
+
+    def __init__(self, message: str, response: ChatResponse) -> None:
+        super().__init__(message)
+        self.response = response
+
+
 __all__ = ["ChatResponse", "Provider", "ProviderConfigurationError", "ToolCall"]

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from avd.state.db import create_engine, create_session_factory, init_db
-from avd.state.models import Node, NodeKind, NodeStatus, Version
+from avd.state.models import NodeKind, NodeStatus, Version
 from avd.state.repo import ProjectRepo
 
 
@@ -245,5 +245,3 @@ def test_versions_are_immutable(repo):
     with pytest.raises(ValueError, match="immutable"):
         repo.session.flush()
     repo.session.rollback()
-
-

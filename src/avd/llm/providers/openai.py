@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import importlib
 import json
+from copy import deepcopy
 from typing import Any
 
-from .base import ChatResponse, ProviderConfigurationError, ToolCall
+from .base import ChatResponse, ProviderConfigurationError, ProviderResponseError, ToolCall
 
 
 class OpenAIProvider:
@@ -58,7 +58,11 @@ class OpenAIProvider:
                     }
                     for call in message["tool_calls"]
                 ]
-        kwargs: dict[str, Any] = {"model": model, "messages": converted, "max_completion_tokens": self.max_output_tokens}
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": converted,
+            "max_completion_tokens": self.max_output_tokens,
+        }
         if tools:
             kwargs["tools"] = [
                 {
@@ -74,20 +78,26 @@ class OpenAIProvider:
         result = self._get_client().chat.completions.create(**kwargs)
         message = result.choices[0].message
         usage = result.usage
-        return ChatResponse(
+        response = ChatResponse(
             content=message.content or "",
-            tool_calls=[
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
+            stop_reason=result.choices[0].finish_reason,
+        )
+        try:
+            response.tool_calls = [
                 ToolCall(
                     id=call.id,
                     name=call.function.name,
                     arguments=json.loads(call.function.arguments),
                 )
                 for call in (message.tool_calls or [])
-            ],
-            input_tokens=usage.prompt_tokens if usage else 0,
-            output_tokens=usage.completion_tokens if usage else 0,
-            stop_reason=result.choices[0].finish_reason,
-        )
+            ]
+        except (ValueError, TypeError) as exc:
+            raise ProviderResponseError(
+                "Invalid tool arguments in completed OpenAI response", response
+            ) from exc
+        return response
 
 
 __all__ = ["OpenAIProvider"]

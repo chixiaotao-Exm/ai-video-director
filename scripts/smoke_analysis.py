@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 from avd.agents.analysis import AnalysisPipeline
 from avd.config import Settings
@@ -22,8 +22,9 @@ def main() -> int:
     if not args.video:
         print("Skipped: provide --video pointing to a video inside AVD_DATA_DIR.")
         return 0
-    if not settings.gemini_model or not settings.gemini_api_key:
-        print("Skipped: set AVD_GEMINI_MODEL and AVD_GEMINI_API_KEY.")
+    route = settings.llm_route("analysis")
+    if route.provider != "gemini" or not route.model or not settings.gemini_api_key:
+        print("Skipped: configure a Gemini analysis route/model and AVD_GEMINI_API_KEY.")
         return 0
     for dependency in ("scenedetect", "faster_whisper", "google.genai"):
         try:
@@ -31,7 +32,9 @@ def main() -> int:
         except ModuleNotFoundError:
             available = False
         if not available:
-            print(f"Skipped: optional package {dependency!r} is missing; install avd[analysis,llm].")
+            print(
+                f"Skipped: optional package {dependency!r} is missing; install avd[analysis,llm]."
+            )
             return 0
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         print("Skipped: put ffmpeg and ffprobe on PATH.")

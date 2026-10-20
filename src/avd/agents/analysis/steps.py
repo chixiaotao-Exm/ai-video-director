@@ -18,10 +18,7 @@ def detect_shots(video: Path | str) -> list[ShotSpan]:
     scenes = detect(str(video), ContentDetector())
     if not scenes:
         return [ShotSpan(start_s=0, end_s=probe(video).duration_s)]
-    return [
-        ShotSpan(start_s=start.get_seconds(), end_s=end.get_seconds())
-        for start, end in scenes
-    ]
+    return [ShotSpan(start_s=start.get_seconds(), end_s=end.get_seconds()) for start, end in scenes]
 
 
 def transcribe(wav: Path | str, model_size: str = "small") -> list[Segment]:

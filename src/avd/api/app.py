@@ -7,12 +7,12 @@ Application construction is side-effect free; its lifespan opens the runtime.
 from __future__ import annotations
 
 import asyncio
+import json
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-import json
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, TYPE_CHECKING
-import uuid
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -59,6 +59,11 @@ class CharacterInput(InputModel):
         min_length=1,
         validation_alias=AliasChoices("appearance_prompt", "fixed_appearance_prompt"),
     )
+
+
+class CharacterSheetInput(InputModel):
+    name: str = Field(min_length=1, max_length=255)
+    appearance_prompt: str = Field(min_length=1)
 
 
 class VoiceInput(InputModel):
@@ -123,49 +128,104 @@ def _columns(value: Any, names: tuple[str, ...]) -> dict[str, Any]:
 
 
 def _project_data(project: Project) -> dict[str, Any]:
-    return _columns(project, (
-        "id", "title", "source_video_path", "analysis_result", "character_id",
-        "voice_id", "budget_limit", "spent", "created_at",
-    ))
+    return _columns(
+        project,
+        (
+            "id",
+            "title",
+            "source_video_path",
+            "analysis_result",
+            "character_id",
+            "voice_id",
+            "budget_limit",
+            "spent",
+            "created_at",
+        ),
+    )
 
 
 def _asset_data(asset: Character | Voice) -> dict[str, Any]:
-    fields = (
-        "id", "name", "consent_confirmed", "consent_confirmed_by",
-        "consent_confirmed_at", "created_at",
+    fields: tuple[str, ...] = (
+        "id",
+        "name",
+        "consent_confirmed",
+        "consent_confirmed_by",
+        "consent_confirmed_at",
+        "created_at",
     )
     if isinstance(asset, Character):
         fields += ("reference_images", "fixed_appearance_prompt", "lora_path")
     else:
-        fields += ("sample_audio_paths", "engine", "engine_voice_id", "model_path", "default_params")
+        fields += (
+            "sample_audio_paths",
+            "engine",
+            "engine_voice_id",
+            "model_path",
+            "default_params",
+        )
     return _columns(asset, fields)
 
 
 def _version_data(version: Version) -> dict[str, Any]:
-    return _columns(version, (
-        "id", "node_id", "number", "recipe_snapshot", "output_paths", "recipe_hash",
-        "cost", "created_at", "note",
-    ))
+    return _columns(
+        version,
+        (
+            "id",
+            "node_id",
+            "number",
+            "recipe_snapshot",
+            "output_paths",
+            "recipe_hash",
+            "cost",
+            "created_at",
+            "note",
+        ),
+    )
 
 
 def _node_data(node: Node) -> dict[str, Any]:
-    result = _columns(node, (
-        "id", "project_id", "kind", "shot_index", "recipe", "status", "current_version_id",
-    ))
+    result = _columns(
+        node,
+        (
+            "id",
+            "project_id",
+            "kind",
+            "shot_index",
+            "recipe",
+            "status",
+            "current_version_id",
+        ),
+    )
     version = node.current_version
-    result.update({
-        "depends_on": [item.id for item in node.depends_on],
-        "current_version": _version_data(version) if version is not None else None,
-        "output_paths": version.output_paths if version is not None else {},
-    })
+    result.update(
+        {
+            "depends_on": [item.id for item in node.depends_on],
+            "current_version": _version_data(version) if version is not None else None,
+            "output_paths": version.output_paths if version is not None else {},
+        }
+    )
     return result
 
 
 def _job_data(job: Job) -> dict[str, Any]:
-    return _columns(job, (
-        "id", "project_id", "node_id", "lane", "job_type", "status", "result", "error",
-        "attempts", "max_attempts", "created_at", "started_at", "finished_at",
-    ))
+    return _columns(
+        job,
+        (
+            "id",
+            "project_id",
+            "node_id",
+            "lane",
+            "job_type",
+            "status",
+            "result",
+            "error",
+            "attempts",
+            "max_attempts",
+            "created_at",
+            "started_at",
+            "finished_at",
+        ),
+    )
 
 
 def _safe_path(root: Path, relative: str, allowed: frozenset[str] | set[str]) -> Path:
@@ -174,7 +234,11 @@ def _safe_path(root: Path, relative: str, allowed: frozenset[str] | set[str]) ->
     if not relative or "\\" in relative or ":" in relative or "\x00" in relative:
         raise HTTPException(404, "Media not found")
     parts = PurePosixPath(relative).parts
-    if not parts or PurePosixPath(relative).is_absolute() or any(part in {"..", "."} for part in parts):
+    if (
+        not parts
+        or PurePosixPath(relative).is_absolute()
+        or any(part in {"..", "."} for part in parts)
+    ):
         raise HTTPException(404, "Media not found")
     candidate = root
     for part in parts:
@@ -261,7 +325,7 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
         value = application.state.runtime
         if value is None:
             raise HTTPException(503, "Application runtime has not started")
-        return value
+        return cast("Runtime", value)
 
     def media_root() -> Path:
         return current_runtime().settings.data_dir.expanduser().resolve()
@@ -302,15 +366,21 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
     @application.get("/projects")
     def list_projects() -> list[dict[str, Any]]:
         with current_runtime().session_factory() as session:
-            return [_project_data(project) for project in session.scalars(
-                select(Project).order_by(Project.created_at, Project.id)
-            )]
+            return [
+                _project_data(project)
+                for project in session.scalars(
+                    select(Project).order_by(Project.created_at, Project.id)
+                )
+            ]
 
     @application.post("/uploads", status_code=201)
     async def upload_asset(file: UploadFile) -> dict[str, str]:
         try:
             relative = await run_in_threadpool(
-                _save_upload, file, media_root(), ASSET_EXTENSIONS,
+                _save_upload,
+                file,
+                media_root(),
+                ASSET_EXTENSIONS,
                 application.state.max_upload_bytes,
             )
         finally:
@@ -336,7 +406,10 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
         relative: str | None = None
         try:
             relative = await run_in_threadpool(
-                _save_upload, file, root, VIDEO_EXTENSIONS,
+                _save_upload,
+                file,
+                root,
+                VIDEO_EXTENSIONS,
                 application.state.max_upload_bytes,
             )
             return await run_in_threadpool(set_source, project_id, relative)
@@ -349,8 +422,10 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
 
     @application.post("/characters", status_code=201)
     def create_character(body: CharacterInput) -> dict[str, Any]:
-        images = {view: str(_safe_path(media_root(), path, AssetStorage.IMAGE_EXTENSIONS))
-                  for view, path in body.reference_images.items()}
+        images = {
+            view: str(_safe_path(media_root(), path, AssetStorage.IMAGE_EXTENSIONS))
+            for view, path in body.reference_images.items()
+        }
         with current_runtime().session_factory() as session:
             asset = library(session).create_character(body.name, images, body.appearance_prompt)
             session.commit()
@@ -361,13 +436,28 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
         with current_runtime().session_factory() as session:
             return [_asset_data(asset) for asset in library(session).list_characters()]
 
+    @application.post("/projects/{project_id}/character-sheet", status_code=202)
+    def character_sheet(project_id: str, body: CharacterSheetInput) -> dict[str, str]:
+        from avd.assets.sheets import submit_character_sheet
+
+        ensure_project(project_id)
+        job_id = submit_character_sheet(
+            current_runtime(), project_id, body.name, body.appearance_prompt
+        )
+        return {"job_id": job_id, "status": "queued"}
+
     @application.post("/voices", status_code=201)
     def create_voice(body: VoiceInput) -> dict[str, Any]:
-        samples = [str(_safe_path(media_root(), path, AssetStorage.AUDIO_EXTENSIONS))
-                   for path in body.sample_paths]
+        samples = [
+            str(_safe_path(media_root(), path, AssetStorage.AUDIO_EXTENSIONS))
+            for path in body.sample_paths
+        ]
         with current_runtime().session_factory() as session:
             asset = library(session).create_voice(
-                body.name, samples, body.engine, body.engine_voice_id,
+                body.name,
+                samples,
+                body.engine,
+                body.engine_voice_id,
                 default_params=body.default_params,
             )
             session.commit()
@@ -378,10 +468,11 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
         with current_runtime().session_factory() as session:
             return [_asset_data(asset) for asset in library(session).list_voices()]
 
-    def consent(asset_type: type[Character] | type[Voice], asset_id: str,
-                body: ConsentInput) -> dict[str, Any]:
+    def consent(
+        asset_type: type[Character] | type[Voice], asset_id: str, body: ConsentInput
+    ) -> dict[str, Any]:
         with current_runtime().session_factory() as session:
-            asset = session.get(asset_type, asset_id)
+            asset = cast(Character | Voice | None, session.get(asset_type, asset_id))
             if asset is None:
                 raise HTTPException(404, "Asset not found")
             library(session).confirm_consent(asset, body.confirmed_by)
@@ -434,8 +525,11 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
             result["budget"] = {
                 "limit": project.budget_limit,
                 "spent": project.spent,
-                "remaining": (project.budget_limit - project.spent
-                              if project.budget_limit is not None else None),
+                "remaining": (
+                    project.budget_limit - project.spent
+                    if project.budget_limit is not None
+                    else None
+                ),
             }
             return result
 
@@ -494,11 +588,13 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
                     (job for job in rows if job.status in TERMINAL_STATUSES),
                     key=lambda job: ((job.finished_at or job.created_at).isoformat(), job.id),
                 )
-                event_rows = [(f"{job.id}:{job.attempts}:{job.status.value}", job) for job in terminal]
+                event_rows = [
+                    (f"{job.id}:{job.attempts}:{job.status.value}", job) for job in terminal
+                ]
                 if resume_from:
                     for index, (event_id, _) in enumerate(event_rows):
                         if event_id == resume_from:
-                            seen.update(item[0] for item in event_rows[:index + 1])
+                            seen.update(item[0] for item in event_rows[: index + 1])
                             break
                     resume_from = None
                 for event_id, job in event_rows:
@@ -512,9 +608,14 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
                 yield ": keep-alive\n\n"
                 await asyncio.sleep(1)
 
-        return StreamingResponse(stream(), media_type="text/event-stream", headers={
-            "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
-        })
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @application.get("/media/{path:path}")
     def media(path: str) -> FileResponse:

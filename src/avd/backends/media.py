@@ -5,7 +5,7 @@ import math
 import shutil
 import subprocess
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -90,11 +90,13 @@ def _positive_duration(value: Any) -> float:
     return duration
 
 
-def _duration(metadata: dict[str, Any], source: Path, stream: dict[str, Any] | None = None) -> float:
+def _duration(
+    metadata: dict[str, Any], source: Path, stream: dict[str, Any] | None = None
+) -> float:
     try:
         container = metadata.get("format", {})
         streams = metadata.get("streams", [])
-        candidates = ([stream.get("duration")] if stream is not None else [])
+        candidates = [stream.get("duration")] if stream is not None else []
         candidates.append(container.get("duration"))
         if stream is None:
             candidates.extend(item.get("duration") for item in streams)
@@ -118,7 +120,10 @@ def _video_info(source: Path) -> _VideoInfo:
         streams = metadata["streams"]
         video = next(item for item in streams if item.get("codec_type") == "video")
         width, height = video["width"], video["height"]
-        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in (width, height)):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in (width, height)
+        ):
             raise ValueError("video dimensions must be positive integers")
         return _VideoInfo(
             duration=_duration(metadata, source, video),
@@ -154,7 +159,9 @@ def write_srt(lines: list[tuple[str, float]], dest: Path) -> Path:
         try:
             duration = _positive_duration(raw_duration)
         except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(f"Subtitle line {number} duration must be finite and positive") from exc
+            raise ValueError(
+                f"Subtitle line {number} duration must be finite and positive"
+            ) from exc
         elapsed += Decimal(str(duration))
         end_ms = max(start_ms + 1, int((elapsed * 1000).to_integral_value(rounding=ROUND_HALF_UP)))
         # Blank lines end SRT cues; normalize whitespace without inventing cues.
@@ -184,11 +191,29 @@ def burn_subtitles(video: Path, srt: Path, dest: Path) -> Path:
         shutil.copyfile(subtitles, working / "subtitles.srt")
         _run(
             [
-                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-n",
-                "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?",
-                "-vf", "subtitles=filename=subtitles.srt,pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
-                "-movflags", "+faststart", str(output),
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-n",
+                "-i",
+                str(source),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0?",
+                "-vf",
+                "subtitles=filename=subtitles.srt,pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+                str(output),
             ],
             cwd=working,
         )
@@ -230,20 +255,42 @@ def assemble_final(clips: list[Path], dest: Path) -> Path:
     for index, info in enumerate(information):
         filters.extend(_clip_filters(index, info, width, height))
     ordered = "".join(f"[v{index}][a{index}]" for index in range(len(sources)))
-    filters.extend([
-        f"{ordered}concat=n={len(sources)}:v=1:a=1[video][audio]",
-        "[video]drawtext=text='AI-generated':fontcolor=white:fontsize=h/24:"
-        "box=1:boxcolor=black@0.6:boxborderw=4:x=w-tw-12:y=h-th-12[vout]",
-        "[audio]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[aout]",
-    ])
+    filters.extend(
+        [
+            f"{ordered}concat=n={len(sources)}:v=1:a=1[video][audio]",
+            "[video]drawtext=text='AI-generated':fontcolor=white:fontsize=h/24:"
+            "box=1:boxcolor=black@0.6:boxborderw=4:x=w-tw-12:y=h-th-12[vout]",
+            "[audio]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[aout]",
+        ]
+    )
     arguments = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-n"]
     for source in sources:
         arguments.extend(["-i", str(source)])
-    arguments.extend([
-        "-filter_complex", ";".join(filters), "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2",
-        "-metadata", "comment=AI-generated", "-movflags", "+faststart", str(output),
-    ])
+    arguments.extend(
+        [
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            "[vout]",
+            "-map",
+            "[aout]",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-metadata",
+            "comment=AI-generated",
+            "-movflags",
+            "+faststart",
+            str(output),
+        ]
+    )
     _run(arguments, timeout=3600)
     _check_output(output)
     return Path(dest)
