@@ -28,6 +28,10 @@
   --icon-control: 36px;
   --content-width: 1360px;
   --dialog-width: 600px;
+  --wide-table-width: 800px;
+  --storyboard-width: 1000px;
+  --player-width: 720px;
+  --player-height: 405px;
   --font: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "Cascadia Code", Consolas, monospace;
   --font-small: 12px;
@@ -38,3 +42,5 @@
   --font-display: 32px;
   --line-height: 1.6;
 }
+
+@media (max-width: 700px) { :root { --header-height: 112px; } }

@@ -1,0 +1,1976 @@
+{
+  "captured_at": "2026-10-20T19:57:27.351Z",
+  "browser": "Microsoft Edge",
+  "base_url": "http://127.0.0.1:8001",
+  "project_id": "d8fb996e-7639-4d23-84ca-26d44c8dac9d",
+  "pages": [
+    {
+      "page": "dashboard",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/",
+      "screenshot": "dashboard-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1211,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-overview",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/overview",
+      "screenshot": "project-overview-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1965,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-chat",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/chat",
+      "screenshot": "project-chat-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1058,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-storyboard",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/storyboard",
+      "screenshot": "project-storyboard-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1033,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-shots",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/shots",
+      "screenshot": "project-shots-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 2343,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-final",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/final",
+      "screenshot": "project-final-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1322,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-analysis",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/analysis",
+      "screenshot": "project-analysis-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1114,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "assets",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/assets",
+      "screenshot": "assets-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1683,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "assets-voices",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/assets",
+      "screenshot": "assets-voices-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1683,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "jobs",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/jobs",
+      "screenshot": "jobs-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 2810,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "costs",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/costs",
+      "screenshot": "costs-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 3126,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "costs-ledger",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/costs",
+      "screenshot": "costs-ledger-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 3126,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/settings",
+      "screenshot": "settings-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 2182,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-prices",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/settings",
+      "screenshot": "settings-prices-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 2182,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-comfy",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/settings/comfy",
+      "screenshot": "settings-comfy-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1595,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-general",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/settings/general",
+      "screenshot": "settings-general-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1180,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-advanced",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/settings/advanced",
+      "screenshot": "settings-advanced-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 1996,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "system",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/system",
+      "screenshot": "system-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 2739,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "system-logs",
+      "size": "desktop",
+      "width": 1440,
+      "height": 900,
+      "route": "#/system",
+      "screenshot": "system-logs-desktop.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 1425,
+        "client_width": 1425,
+        "content_height": 2739,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "dashboard",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/",
+      "screenshot": "dashboard-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 1342,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-overview",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/overview",
+      "screenshot": "project-overview-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 3159,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-chat",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/chat",
+      "screenshot": "project-chat-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 1772,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-storyboard",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/storyboard",
+      "screenshot": "project-storyboard-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 1074,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": [
+          {
+            "element": "table",
+            "left": 33,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "thead",
+            "left": 33,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 343,
+            "right": 535,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 535,
+            "right": 601,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 601,
+            "right": 667,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 667,
+            "right": 779,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 779,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tbody",
+            "left": 33,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 343,
+            "right": 535,
+            "clipped_by_container": true
+          },
+          {
+            "element": "textarea",
+            "left": 359,
+            "right": 519,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 535,
+            "right": 601,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 551,
+            "right": 585,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 601,
+            "right": 667,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 617,
+            "right": 651,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 667,
+            "right": 779,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 683,
+            "right": 763,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 779,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "button.button.small",
+            "left": 795,
+            "right": 859,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 343,
+            "right": 535,
+            "clipped_by_container": true
+          },
+          {
+            "element": "textarea",
+            "left": 359,
+            "right": 519,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 535,
+            "right": 601,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 551,
+            "right": 585,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 601,
+            "right": 667,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 617,
+            "right": 651,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 667,
+            "right": 779,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 683,
+            "right": 763,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 779,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "button.button.small",
+            "left": 795,
+            "right": 859,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 875,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 343,
+            "right": 535,
+            "clipped_by_container": true
+          },
+          {
+            "element": "textarea",
+            "left": 359,
+            "right": 519,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 535,
+            "right": 601,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 551,
+            "right": 585,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 601,
+            "right": 667,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 617,
+            "right": 651,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 667,
+            "right": 779,
+            "clipped_by_container": true
+          },
+          {
+            "element": "input",
+            "left": 683,
+            "right": 763,
+            "clipped_by_container": true
+          }
+        ]
+      }
+    },
+    {
+      "page": "project-shots",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/shots",
+      "screenshot": "project-shots-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 2763,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-final",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/final",
+      "screenshot": "project-final-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 1239,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "project-analysis",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/projects/d8fb996e-7639-4d23-84ca-26d44c8dac9d/analysis",
+      "screenshot": "project-analysis-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 1206,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": [
+          {
+            "element": "table",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "thead",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 333,
+            "right": 609,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 609,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tbody",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 333,
+            "right": 609,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 609,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 333,
+            "right": 609,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 609,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 333,
+            "right": 609,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 609,
+            "right": 833,
+            "clipped_by_container": true
+          }
+        ]
+      }
+    },
+    {
+      "page": "assets",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/assets",
+      "screenshot": "assets-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 2242,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "assets-voices",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/assets",
+      "screenshot": "assets-voices-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 2242,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "jobs",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/jobs",
+      "screenshot": "jobs-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 2962,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": [
+          {
+            "element": "table",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "thead",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 336,
+            "right": 443,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 443,
+            "right": 527,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 527,
+            "right": 607,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 607,
+            "right": 687,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 687,
+            "right": 777,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 777,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tbody",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 336,
+            "right": 443,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 443,
+            "right": 527,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span.status.status-succeeded",
+            "left": 459,
+            "right": 511,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span.status-dot",
+            "left": 459,
+            "right": 467,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 527,
+            "right": 607,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 607,
+            "right": 687,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 687,
+            "right": 777,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 777,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 336,
+            "right": 443,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 443,
+            "right": 527,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span.status.status-succeeded",
+            "left": 459,
+            "right": 511,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span.status-dot",
+            "left": 459,
+            "right": 467,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 527,
+            "right": 607,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 607,
+            "right": 687,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 687,
+            "right": 777,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 777,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 336,
+            "right": 443,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 443,
+            "right": 527,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span.status.status-succeeded",
+            "left": 459,
+            "right": 511,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span.status-dot",
+            "left": 459,
+            "right": 467,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 527,
+            "right": 607,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 607,
+            "right": 687,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 687,
+            "right": 777,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 777,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 336,
+            "right": 443,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 443,
+            "right": 527,
+            "clipped_by_container": true
+          }
+        ]
+      }
+    },
+    {
+      "page": "costs",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/costs",
+      "screenshot": "costs-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 3968,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": [
+          {
+            "element": "table",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "thead",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tbody",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 532,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 553,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 546,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 522,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          }
+        ]
+      }
+    },
+    {
+      "page": "costs-ledger",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/costs",
+      "screenshot": "costs-ledger-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 3968,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": [
+          {
+            "element": "table",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "thead",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "th",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tbody",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 532,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 553,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 546,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 493,
+            "right": 615,
+            "clipped_by_container": true
+          },
+          {
+            "element": "span",
+            "left": 509,
+            "right": 522,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 615,
+            "right": 748,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 748,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "tr",
+            "left": 33,
+            "right": 833,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 289,
+            "right": 412,
+            "clipped_by_container": true
+          },
+          {
+            "element": "td",
+            "left": 412,
+            "right": 493,
+            "clipped_by_container": true
+          }
+        ]
+      }
+    },
+    {
+      "page": "settings",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/settings",
+      "screenshot": "settings-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 2975,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-prices",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/settings",
+      "screenshot": "settings-prices-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 2975,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-comfy",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/settings/comfy",
+      "screenshot": "settings-comfy-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 1557,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-general",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/settings/general",
+      "screenshot": "settings-general-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 1565,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "settings-advanced",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/settings/advanced",
+      "screenshot": "settings-advanced-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 2078,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "system",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/system",
+      "screenshot": "system-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 4294,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    },
+    {
+      "page": "system-logs",
+      "size": "mobile",
+      "width": 390,
+      "height": 844,
+      "route": "#/system",
+      "screenshot": "system-logs-mobile.png",
+      "ready": true,
+      "exceptions": [],
+      "console_errors": [],
+      "blocked_external_requests": 0,
+      "layout": {
+        "document_width": 390,
+        "client_width": 390,
+        "content_height": 4294,
+        "viewport_overflow": false,
+        "body_background": "rgb(255, 255, 255)",
+        "application_error": false,
+        "visible_unloaded_videos": 0,
+        "failed_visible_images": 0,
+        "media_errors": [],
+        "outside_elements": []
+      }
+    }
+  ],
+  "passed": true
+}

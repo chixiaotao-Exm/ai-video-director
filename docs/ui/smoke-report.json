@@ -1,0 +1,152 @@
+{
+  "started_at": "2026-10-20T19:51:28.507Z",
+  "browser": "Microsoft Edge",
+  "base_url": "http://127.0.0.1:8002",
+  "steps": [
+    {
+      "name": "dashboard creates a project",
+      "passed": true,
+      "details": {
+        "budget": 7.5
+      }
+    },
+    {
+      "name": "costs edits the project budget",
+      "passed": true,
+      "details": {
+        "budget": 12.25
+      }
+    },
+    {
+      "name": "general settings save and restore",
+      "passed": true,
+      "details": {
+        "restored": true
+      }
+    },
+    {
+      "name": "character upload creates an unconsented asset",
+      "passed": true
+    },
+    {
+      "name": "consent requires both actor and unchecked explicit confirmation",
+      "passed": true,
+      "details": {
+        "invalid_submissions_sent": 0,
+        "initially_checked": false
+      }
+    },
+    {
+      "name": "voice upload and consent",
+      "passed": true
+    },
+    {
+      "name": "assigns consented assets to the new project",
+      "passed": true
+    },
+    {
+      "name": "jobs filters and clearing work",
+      "passed": true,
+      "details": {
+        "filtered_jobs": 11,
+        "restored_jobs": 20
+      }
+    },
+    {
+      "name": "worker start and stop through the system UI",
+      "passed": true,
+      "details": {
+        "started": 3,
+        "stopped": 3,
+        "jobs_submitted": 0
+      }
+    },
+    {
+      "name": "mobile menu opens and navigation closes it",
+      "passed": true,
+      "details": {
+        "width": 390,
+        "height": 844
+      }
+    }
+  ],
+  "exceptions": [],
+  "console_errors": [],
+  "blocked_requests": [],
+  "writes": [
+    {
+      "method": "POST",
+      "path": "/projects"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/9044153d-0fce-4330-9d78-0893920d822e/tools/get_budget"
+    },
+    {
+      "method": "PUT",
+      "path": "/projects/9044153d-0fce-4330-9d78-0893920d822e/budget"
+    },
+    {
+      "method": "PUT",
+      "path": "/settings"
+    },
+    {
+      "method": "PUT",
+      "path": "/settings"
+    },
+    {
+      "method": "POST",
+      "path": "/uploads"
+    },
+    {
+      "method": "POST",
+      "path": "/characters"
+    },
+    {
+      "method": "POST",
+      "path": "/characters/8b686d83-7bba-4058-b352-df9e2d71f892/consent"
+    },
+    {
+      "method": "POST",
+      "path": "/uploads"
+    },
+    {
+      "method": "POST",
+      "path": "/voices"
+    },
+    {
+      "method": "POST",
+      "path": "/voices/75399a62-8a8c-4b12-8bf1-284a22166d18/consent"
+    },
+    {
+      "method": "PUT",
+      "path": "/projects/9044153d-0fce-4330-9d78-0893920d822e/assets"
+    },
+    {
+      "method": "POST",
+      "path": "/workers/all/start"
+    },
+    {
+      "method": "POST",
+      "path": "/workers/all/stop"
+    }
+  ],
+  "consent_screenshots": [
+    {
+      "file": "consent-desktop.png",
+      "width": 1440,
+      "height": 900,
+      "unchecked": true,
+      "overflow": false
+    },
+    {
+      "file": "consent-mobile.png",
+      "width": 390,
+      "height": 844,
+      "unchecked": true,
+      "overflow": false
+    }
+  ],
+  "finished_at": "2026-10-20T19:51:33.185Z",
+  "passed": true
+}

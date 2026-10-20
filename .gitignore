@@ -35,6 +35,9 @@ data/
 *.gif
 *.webp
 
+# T17 documentation captures are intentionally versioned (never runtime media).
+!docs/ui/*.png
+
 # Build artifacts
 build/
 dist/

@@ -185,3 +185,15 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** A framework/build pipeline or CSS library; rejected because T17 explicitly requires a build-free interface and no CDN.
 - **Decision:** Keep real user approvals and consent dialogs explicit with unchecked required checkboxes and named actors. Poll changing queue/log data without replacing active forms; use SSE for project completion notices.
 - **Alternatives:** Auto-approve transitions or rebuild the page every polling cycle; rejected for review integrity and preserving in-progress edits.
+
+## T17d — visual and browser verification
+
+- **Date:** 2026-10-20
+- **Decision:** Capture with real headless Edge/CDP and local Node built-ins, at 1440x900 and 390x844. Block browser requests outside the local app, wait for UI/media readiness, save overflow/error diagnostics, and inspect every page/section/dialog image manually.
+- **Alternatives:** Static mockups or uninspected screenshots; rejected because the task explicitly requires working browser pages and layout fixes.
+- **Decision:** Keep screenshots and reports under docs/ui as explicit documentation artifacts, exempting only this directory's PNGs from the general media ignore rule. Consolidate runtime Chinese strings into i18n/zh.js and remove intermediate translation fragments.
+- **Alternatives:** Commit generated project media or retain multiple translation copies; rejected for repository hygiene and localization consistency.
+- **Decision:** Use separate data/ui-capture and data/ui-smoke fixtures. When the original demonstration environment gained service settings, preserve it and move all remaining verification to fresh directories/ports. Demo preparation never overwrites an existing settings file.
+- **Alternatives:** Reset a configured demo environment for convenient screenshots; rejected because user configuration must be preserved.
+- **Decision:** Responsive wide tables scroll inside their cards; keep mobile budget visibility, left-aligned project headings and a bounded final player. SSE deduplicates historical completion events, and polling preserves unsaved forms/media playback.
+- **Alternatives:** Squeeze every table column into the phone viewport or replace active form DOM on every poll; rejected after inspecting screenshots and interactions.

@@ -29,7 +29,7 @@ export async function render(ctx) {
     job_type: input('text', '', {placeholder: 'image_gen', list: 'jobs-types'}),
   };
   const filterForm = form([
-    h('div', {class: 'grid-2'},
+    h('div', {class: 'filter-grid'},
       field(t('jobs.project'), controls.project_id), field(t('jobs.lane'), controls.lane),
       field(t('jobs.status'), controls.status), field(t('jobs.type'), controls.job_type),
     ),

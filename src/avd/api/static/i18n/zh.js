@@ -305,7 +305,7 @@ const STRINGS = {
   "project.recentJobs": "最近任务",
   "project.job": "任务",
   "project.updated": "状态更新",
-  "project.jobFinished": "任务已完成",
+  "project.jobFinished": "任务状态更新",
   "project.noJobs": "暂时没有任务。",
   "project.allJobs": "打开任务队列",
   "project.attempts": "尝试",
@@ -546,7 +546,7 @@ const STRINGS = {
   "nav.system": "系统",
   "shell.name": "AI Video Director",
   "shell.tagline": "导演工作台",
-  "shell.localNote": "仅本机回环访问 · 版本不可变",
+  "shell.localNote": "本地创作 · 每个版本都被保留",
   "shell.menu": "打开导航",
   "shell.selectProject": "选择当前项目",
   "shell.connected": "本地服务已连接",
@@ -584,7 +584,11 @@ const STRINGS = {
   "dashboard.testConnection": "设置与测试",
   "dashboard.workers": "受管 worker",
   "dashboard.workerNote": "当前 {n} 个 lane 运行",
-  "dashboard.runningCount": "{n} 个运行"
+  "dashboard.runningCount": "{n} 个运行",
+  "project.refreshAvailable": "任务进度已更新。你的输入和播放状态已保留，可点击刷新查看新内容。",
+  "shell.navigation": "主导航",
+  "shell.disconnected": "服务连接中断",
+  "common.comfyui": "ComfyUI"
 };
 export function t(key, vars = {}) { let value = STRINGS[key] ?? key; return String(value).replace(/\{(\w+)\}/g, (_, name) => vars[name] == null ? `{${name}}` : String(vars[name])); }
 export { STRINGS };

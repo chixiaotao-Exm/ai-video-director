@@ -142,3 +142,12 @@
 - Replaced dark single-page UI with pure-white tokens, responsive shell/hash router and Chinese ES-module pages for dashboard, six project tabs, assets, jobs, costs, settings and system.
 - Browser forms cover uploads/consent, storyboard edits, scoped regeneration, version reverts, all generation actions, budgets, settings and managed workers. Project events use SSE with polling fallback; user-supplied content is rendered with DOM text nodes.
 - Verification: 661 passed, 2 Windows symlink skips, 1 upstream TestClient warning; Ruff/format/mypy green; all JavaScript modules pass node --check. Visual screenshots and layout polish follow in T17d.
+
+## T17d — UI polish and screenshots
+
+- Captured and visually inspected 40 headless Edge PNGs at desktop 1440x900 and mobile390x844: 15 pages/tabs, four additional long-page regions and a consent dialog, each in both sizes. docs/ui/README.md indexes every image.
+- Fixed mobile storyboard overflow/wide-table text compression, project header alignment, mobile budget visibility, final-player size, historical SSE duplication, and polling/edit preservation. Runtime Chinese strings now have one canonical map.
+- Added reproducible offline demo preparation, Edge screenshot diagnostics, browser interaction smoke and Node syntax checks to both quality scripts. Existing configured demo settings are preserved; final captures/smoke use separate fresh fixtures.
+- Verification: 661 passed, 2 skipped (Windows symlink permissions), 1 upstream TestClient warning; Ruff lint/format, mypy, 12 JavaScript module syntax checks, Bash syntax and diff whitespace checks green. Headless capture report38/38 passed; browser smoke10/10 passed; no external model/paid calls. Built wheel contains all nested browser assets.
+- Temporary capture/smoke servers, workers and browsers were cleaned up. The previously opened8000 demonstration service and its user-entered configuration were preserved.
+- Remaining external verification: real provider access/prices, GPU/model/custom-node compatibility and exported ComfyUI workflows. No known unimplemented T17 page or required browser action remains. The three user-supplied task files remain untracked and unchanged.

@@ -54,7 +54,9 @@ function approvalDialog(ctx, project, stage) {
 
 function approvalButton(ctx, project, stage, ready) {
   const done = approved(project, stage);
-  return button(done ? p("alreadyApproved") : p(`approve.${stage}.button`), () => approvalDialog(ctx, project, stage), {disabled: done || !ready, small: true});
+  const previous = {script: "structure", frames: "script", final: "frames"}[stage];
+  const allowed = !previous || approved(project, previous);
+  return button(done ? p("alreadyApproved") : p(`approve.${stage}.button`), () => approvalDialog(ctx, project, stage), {disabled: done || !ready || !allowed, small: true});
 }
 
 function budgetDialog(ctx, project, budget) {
@@ -102,15 +104,19 @@ async function refreshLiveJobs(ctx, projectId) {
   });
 }
 
-function attachJobEvents(ctx, projectId) {
-  if (typeof EventSource !== "function") return;
+function attachJobEvents(ctx, projectId, initialJobs) {
+  if (ctx.signal?.aborted || typeof EventSource !== "function") return;
+  const seen = new Set(initialJobs.filter(job => ["succeeded", "failed", "cancelled"].includes(job.status)).map(job => `${job.id}:${job.attempts}:${job.status}`));
   const stream = new EventSource(path(projectId, "/events"));
   stream.addEventListener("job_finished", event => {
     if (ctx.signal?.aborted) return;
     let payload = {};
     try { payload = JSON.parse(event.data || "{}"); } catch { payload = {}; }
+    const key = `${payload.id}:${payload.attempts}:${payload.status}`;
+    if (seen.has(key)) return;
+    seen.add(key);
     const kind = payload.job_type ? p(`kind.${payload.job_type}`) : p("job");
-    const status = payload.status ? p(`status.${payload.status}`) : p("updated");
+    const status = payload.status ? t(`status.${payload.status}`) : p("updated");
     notice(`${p("jobFinished")}：${kind} · ${status}`);
     void refreshLiveJobs(ctx, projectId).catch(() => {});
   });
@@ -218,8 +224,8 @@ async function overview(ctx, project, budget, jobs) {
         h("div", {}, h("dt", {}, p("spent")), h("dd", {}, currency(budget.spent))),
         h("div", {}, h("dt", {}, p("reserved")), h("dd", {}, currency(budget.reserved))),
         h("div", {}, h("dt", {}, p("remaining")), h("dd", {}, budget.remaining == null ? p("unlimited") : currency(budget.remaining))),
-      ), button(p("budgetApproval"), () => budgetDialog(ctx, project, budget)), anchor(p("editBudget"), `#/costs?project=${encodeURIComponent(project.id)}`)),
-      panel(p("recentJobs"), liveJobs(project.id, jobs), anchor(p("allJobs"), `#/jobs?project=${encodeURIComponent(project.id)}`)),
+      ), button(p("budgetApproval"), () => budgetDialog(ctx, project, budget)), anchor(p("editBudget"), "#/costs")),
+      panel(p("recentJobs"), liveJobs(project.id, jobs), anchor(p("allJobs"), "#/jobs")),
     ),
   );
 }
@@ -407,7 +413,7 @@ async function chat(ctx, project, initialJobs) {
     }
     jobs.replaceChildren(jobRows(latestJobs));
   }, 3000);
-  return h("div", {class: "project-chat-grid"}, h("section", {class: "card panel chat-panel stack"}, log, composer), h("aside", {class: "stack"}, panel(p("recentJobs"), jobs, anchor(p("allJobs"), `#/jobs?project=${encodeURIComponent(project.id)}`)), panel(p("chatCheckpoints"), paragraph(p("chatCheckpointsHelp")), anchor(p("returnOverview"), route(project.id, "overview")))));
+  return h("div", {class: "project-chat-grid"}, h("section", {class: "card panel chat-panel stack"}, log, composer), h("aside", {class: "stack"}, panel(p("recentJobs"), jobs, anchor(p("allJobs"), "#/jobs")), panel(p("chatCheckpoints"), paragraph(p("chatCheckpointsHelp")), anchor(p("returnOverview"), route(project.id, "overview")))));
 }
 
 export async function render(ctx) {
@@ -421,14 +427,26 @@ export async function render(ctx) {
   const header = h("header", {class: "page-heading row spread wrap"}, h("div", {class: "stack compact"}, h("p", {class: "eyebrow"}, p("projectWorkspace")), h("h1", {}, project.title)), button(p("refresh"), () => ctx.reload(), {small: true}));
   const renderers = {overview, chat, storyboard, shots, final: finalPage, analysis};
   const content = current === "overview" ? await overview(ctx, project, budget, jobs) : current === "chat" ? await chat(ctx, project, jobs) : await renderers[current](ctx, project);
-  attachJobEvents(ctx, id);
+  attachJobEvents(ctx, id, jobs);
+  const view = h("div", {class: "stack project-page"}, header, tabs, content);
+  let edited = false;
+  let updateNoticed = false;
+  view.addEventListener("input", () => { edited = true; });
+  view.addEventListener("change", () => { edited = true; });
+  if (current === "overview") ctx.poll(() => refreshLiveJobs(ctx, id), 4000);
   if (current !== "chat" && current !== "storyboard") {
     const signature = JSON.stringify([project.nodes.map(node => [node.id, node.status, node.current_version_id]), project.reviews]);
     ctx.poll(async () => {
       const next = await api(path(id, "/status"));
       if (ctx.signal?.aborted || document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
-      if (JSON.stringify([next.nodes.map(node => [node.id, node.status, node.current_version_id]), next.reviews]) !== signature) await ctx.reload();
+      if (JSON.stringify([next.nodes.map(node => [node.id, node.status, node.current_version_id]), next.reviews]) !== signature) {
+        if (edited || [...view.querySelectorAll("video,audio")].some(element => !element.paused && !element.ended)) {
+          if (!updateNoticed) { notice(p("refreshAvailable")); updateNoticed = true; }
+          return;
+        }
+        await ctx.reload();
+      }
     }, 4000);
   }
-  return h("div", {class: "stack project-page"}, header, tabs, content);
+  return view;
 }

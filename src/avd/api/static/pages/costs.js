@@ -18,7 +18,7 @@ export async function render(ctx) {
     model: input('text', '', {placeholder: t('costs.modelPlaceholder')}),
   };
   const filtersForm = form([
-    h('div', {class: 'grid-2'}, ...Object.entries(controls).map(([name, control]) => field(t(`costs.filter.${name}`), control))),
+    h('div', {class: 'filter-grid'}, ...Object.entries(controls).map(([name, control]) => field(t(`costs.filter.${name}`), control))),
   ], async () => {
     filters = Object.fromEntries(Object.entries(controls).map(([name, control]) => [name, control.value.trim()]));
     offset = 0;
@@ -30,7 +30,7 @@ export async function render(ctx) {
     offset = 0;
     await refresh();
   }));
-  const totals = h('div', {class: 'grid-3'});
+  const totals = h('div', {class: 'grid-3 summary-cards'});
   const groups = h('div', {class: 'grid-2'});
   const ledger = h('div');
   const budgets = h('div', {class: 'grid-2'});

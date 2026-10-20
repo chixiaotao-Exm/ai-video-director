@@ -85,7 +85,7 @@ async function dashboard(ctx) {
   root.append(h('section',{class:'card'},h('div',{class:'section-heading'},h('h2',{},t('dashboard.services')),link(t('dashboard.system'), '#/system')),
     h('div',{class:'service-list'},
       service(t('dashboard.providers'),t('dashboard.providerNote',{n:configured}),configured===3?'ok':'unknown',t(configured===3?'status.ok':'status.unconfigured'),'#/settings',t('common.configure')),
-      service('ComfyUI',data.system.comfyui.profile,data.system.comfyui.status,t(`status.${data.system.comfyui.status}`),'#/settings',t('dashboard.testConnection')),
+      service(t('common.comfyui'),data.system.comfyui.profile,data.system.comfyui.status,t(`status.${data.system.comfyui.status}`),'#/settings',t('dashboard.testConnection')),
       service(t('dashboard.workers'),t('dashboard.workerNote',{n:runningWorkers}),'unknown',t('dashboard.runningCount',{n:runningWorkers}),'#/system',t('common.manage'))
     )));
   return root;
@@ -99,9 +99,11 @@ async function renderPage() {
   const controller = new AbortController(); state.controller = controller;
   window.__AVD_READY = false;
   document.body.classList.remove('menu-open');
+  document.querySelector('#notice').hidden = true;
   document.querySelector('#menu-toggle').setAttribute('aria-expanded','false');
   content.replaceChildren(h('div',{class:'loading-view',role:'status'},t('common.loading')));
-  const parts = (location.hash.slice(1) || '/').split('/').filter(Boolean).map(decodeURIComponent);
+  const hashURL = new URL(location.hash.slice(1) || '/', location.origin);
+  const parts = hashURL.pathname.split('/').filter(Boolean).map(decodeURIComponent);
   const key = parts[0] || 'dashboard';
   try {
     state.projects = await api('/projects',{signal:controller.signal});
@@ -110,7 +112,7 @@ async function renderPage() {
     if (!state.projectId && state.projects.length) saveProject(state.projects[0].id);
     updateTopbar(); renderNavigation(key === 'projects' ? 'project' : key);
     const ctx = {
-      projectId:state.projectId, projects:state.projects, params:parts.slice(1), signal:controller.signal,
+      projectId:state.projectId, projects:state.projects, params:parts.slice(1), query:hashURL.searchParams, signal:controller.signal,
       reload:renderPage, navigate,
       onDispose(cleanup){ state.cleanup.push(cleanup); },
       poll(callback, interval=4000){

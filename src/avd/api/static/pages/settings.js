@@ -87,6 +87,7 @@ export async function render(ctx) {
   function addTab(key, content) {
     const id = `settings-panel-${key}`;
     const tab = button(t(`settings.tab.${key}`), () => {
+      history.replaceState(null, '', `#/settings/${key}`);
       for (const item of tabNodes) {
         const selected = item.key === key;
         item.tab.setAttribute('aria-selected', String(selected));
@@ -303,5 +304,7 @@ export async function render(ctx) {
     return save(changes);
   }), t('settings.saveAdvanced'));
   addTab('advanced', section(t('settings.advancedTitle'), h('div', {class: 'form-stack'}, advanced, advancedStatus)));
+  const selectedTab = tabNodes.find(item => item.key === ctx.params?.[0]);
+  if (selectedTab) selectedTab.tab.click();
   return root;
 }

@@ -47,11 +47,10 @@ export function notice(message, error = false) {
 }
 export async function run(element, action) {
   if (element?.dataset.busy === 'true') return;
-  const disabled = element?.disabled;
-  if (element) { element.dataset.busy = 'true'; element.disabled = true; element.setAttribute('aria-busy', 'true'); }
+  if (element) { element.dataset.busy = 'true'; element.setAttribute('aria-busy', 'true'); }
   try { return await action(); }
   catch (error) { if (error.name !== 'AbortError') notice(error.message || String(error), true); }
-  finally { if (element) { element.dataset.busy = 'false'; element.disabled = disabled; element.removeAttribute('aria-busy'); } }
+  finally { if (element) { element.dataset.busy = 'false'; element.removeAttribute('aria-busy'); } }
 }
 export function button(text, onClick, {primary = false, danger = false, small = false, ...attrs} = {}) {
   const element = h('button', {type: 'button', class: ['button', primary && 'primary', danger && 'danger', small && 'small'].filter(Boolean).join(' '), ...attrs}, text);

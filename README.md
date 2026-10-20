@@ -176,3 +176,11 @@ Ctrl+C / SIGTERM 停止领取新任务，给当前任务 `AVD_WORKER_SHUTDOWN_GR
 按 T17 要求，界面输入的密钥保存在本地、Git 忽略的 settings.json；界面/API 仅显示是否设置和末四位，输入框留空保持原值，替换或清除必须显式操作。不要分享此本地文件。配置变更会清除此前连接测试的状态。
 
 服务仅接受 localhost、127.0.0.1 或 ::1 的 Host；浏览器写请求的 Origin 必须与应用一致。命令行无 Origin 的请求仍可用。连接测试不自动运行；模型测试需要选择费用归属项目，最多请求八个输出 token，正常执行预算检查和费用记账。ComfyUI 测试只读取 /system_stats。
+
+## 白色 Web UI 与截图验证
+
+工作台、项目六个标签页、素材库、任务队列、费用、设置和系统均使用中文白色界面；手机导航在顶部菜单中。分镜/费用等宽表格可在面板内横向滚动。配置密钥仅写入本机，连接测试只由明确点击触发。
+
+`scripts/check.ps1` / `scripts/check.sh` 现在也运行每个 JavaScript 模块的 `node --check`。界面截图索引与检查结果见 [docs/ui/README.md](docs/ui/README.md)：40 张桌面/手机 PNG、页面诊断报告和 10 项离线浏览器操作报告。
+
+截图复现使用 `scripts/prepare_ui_demo.py --data-dir data/ui-capture` 创建独立离线媒体。读取该目录的 ui-manifest.json，以其中 data_dir/database_url 启动 `avd serve --no-workers`，然后运行 `node scripts/capture_ui.mjs --base-url http://127.0.0.1:8001 --manifest data/ui-capture/ui-manifest.json`。不要把交互冒烟脚本用于日常项目数据；它专用于可写的离线验证目录。已有本地设置不会被演示准备脚本覆盖。

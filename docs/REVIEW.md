@@ -1,6 +1,6 @@
 # SPEC review — 2026-10-20
 
-This review covers SPEC.md sections 1–9 and the T03b–T16 milestone requirements. PROGRESS.md preserves the validation result for each milestone; the final local quality gate covers the complete implementation.
+This review covers SPEC.md sections 1–9 and the T03b–T16 plus T17 milestone requirements. PROGRESS.md preserves the validation result for each milestone; the final local quality gate covers the complete implementation.
 
 ## Fixed findings
 
@@ -88,3 +88,13 @@ Added regression coverage for settings precedence/atomic failure/secret masking 
 ## T17b lifecycle audit
 
 Managed worker start is idempotent, lane controls preserve other workers, stop is bounded and rotates unfinished claim tokens on uncertain cleanup. API tests verify lifespan startup/shutdown and origin enforcement; CLI tests verify default/explicit flags. Worker status distinguishes server-owned process state from all running queue jobs. Browser UI integration and visual checks remain T17c/T17d.
+
+## T17 completion audit
+
+- All requested browser surfaces are implemented: dashboard/service snapshots; project overview/chat/storyboard/shot media/final/analysis; characters/voices/consent; global queue controls; ledger/budgets; masked provider/Comfy/general/advanced settings; worker/health/metrics/version/FFmpeg/log controls.
+- Local security applies to settings, static, media and state-changing routes. Connection checks require user initiation; paid tiny checks use project budget/ledger. Configuration precedence and atomic persistence have offline API tests.
+- Default avd serve owns three lane workers with bounded shutdown and browser controls; externally launched workers are observed but never killed. New settings reload between jobs.
+- Node syntax checks cover all modules in both quality scripts. The built wheel was inspected and includes the nested page and i18n assets.
+- Headless Edge verified 38 desktop/mobile page/region captures and two consent-dialog captures. All 40 PNGs were visually inspected; overflow, narrow-table wrapping, player sizing, mobile budget/header layout, duplicate historical SSE notifications and edit-preservation issues were fixed. Ten real browser form/control flows passed against a fresh local offline fixture, with no model calls.
+- Screenshots contain synthetic content and unconfigured provider panels. Existing user-entered demonstration settings and the service using them were preserved; temporary validation servers/workers/browsers were cleaned up.
+- External boundaries remain: no real paid provider, GPU inference, rented-host installation or real exported ComfyUI graph was exercised. Offline controls/visual checks do not certify model quality or hardware compatibility. This remains a local single-user application.
