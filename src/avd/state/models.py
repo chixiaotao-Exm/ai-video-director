@@ -105,6 +105,12 @@ class Character(Base):
     consent_confirmed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
+    consent_confirmed_by: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    consent_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
@@ -150,6 +156,12 @@ class Voice(Base):
     )
     consent_confirmed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
+    )
+    consent_confirmed_by: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    consent_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now

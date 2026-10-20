@@ -17,7 +17,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Node, NodeKind, NodeStatus, Project, Version
+from .models import Character, Node, NodeKind, NodeStatus, Project, Version, Voice
 
 
 _KIND_ORDER: tuple[str, ...] = (
@@ -82,6 +82,25 @@ class ProjectRepo:
             budget_limit=budget_limit,
         )
         self.session.add(project)
+        self.session.flush()
+        return project
+
+    def attach_assets(
+        self,
+        project: Project,
+        character: Character,
+        voice: Voice,
+    ) -> Project:
+        """Attach consented character and voice assets to a project."""
+
+        from avd.assets.library import require_usable
+
+        require_usable(character)
+        require_usable(voice)
+        project.character = character
+        project.voice = voice
+        project.character_id = character.id
+        project.voice_id = voice.id
         self.session.flush()
         return project
 
