@@ -33,3 +33,9 @@ Git 身份和 GitHub 登录由本机的 Git / GitHub CLI 管理；浏览器服�
 第二轮 `39515664222` 的构建和质量检查已通过，暴露新克隆缺少被 Git 忽略的 `data/` 父目录，pytest 无法创建固定的 `data/pytest`。测试会话现在先创建该父目录，不清理任何用户数据，支持直接运行 `python -m pytest -q`。
 
 第三轮 `39516398195` 已有 738 项测试通过，仅 `.env` 配置优先级测试失败：工作流自己设置的全局 `AVD_DATA_DIR` 正确地覆盖了测试用 `.env`。已移除不必要的 CI 应用配置覆盖，测试继续使用各自的临时数据目录；应用优先级行为不变。
+
+## 已验证的发布检查
+
+2026-10-20，代码提交 `529d922223ae672f6b2274ecf9e61c0ed98c81b9` 的 GitHub Actions **Quality checks / quality** 全部成功：[运行 39517303744](https://github.com/chixiaotao-Exm/ai-video-director/actions/runs/39517303744)。Ubuntu/Python 3.12 的 pytest 为 **739 passed**；Ruff lint/format、mypy、17 个 JS 模块、Bash、Vue 构建及三项前端测试均通过。Linux 重建的前端产物与已提交文件一致。
+
+Windows 本地验证为 **737 passed, 2 skipped**（符号链接权限）；浏览器操作 **15/15**，截图 **58/58**。新增文档提交只记录这些已发生的结果。`v0.2.0` 对应 Studio 发布；后续真实结果仍以该标签及 main 的 GitHub Actions 页面为准。没有启用分支保护或自动部署，不把这些未设置项描述为已完成。

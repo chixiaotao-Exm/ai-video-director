@@ -124,3 +124,5 @@ Verification: local Python **737 passed, 2 Windows symlink skips**, Ruff/format/
 | 14 | P3 | Failed source separation can leave unregistered intermediate media files. | `assets/media.py` |
 
 These modules were not expanded into unrelated rewrites during the Studio upgrade. The detailed original reproduction report remains locally at `data/review-current/review-40ae226.md` (ignored runtime/audit data). Real singing/music/motion adapters, paid-provider trials, GPU/custom-node validation and exported ComfyUI workflows remain external integration work. Plan consent does not grant or change asset-library consent.
+
+Remote validation is now real: GitHub run `39517303744` for `529d922` succeeded with **739 passed** on Ubuntu, including the formerly Windows-skipped symlink cases. Optional NumPy declaration, fresh-checkout test directories and CI environment isolation were corrected from runner evidence. This does not validate GPU hardware or live providers.
