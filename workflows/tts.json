@@ -1,0 +1,11 @@
+{
+  "1": {
+    "class_type": "REPLACE_WITH_EXPORTED_TTS_WORKFLOW",
+    "inputs": {
+      "text": "{{text}}",
+      "voice_sample": "{{voice_sample}}",
+      "speed": "{{speed}}",
+      "emotion": "{{emotion}}"
+    }
+  }
+}

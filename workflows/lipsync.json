@@ -1,0 +1,9 @@
+{
+  "1": {
+    "class_type": "REPLACE_WITH_EXPORTED_LIPSYNC_WORKFLOW",
+    "inputs": {
+      "video": "{{video}}",
+      "audio": "{{audio}}"
+    }
+  }
+}

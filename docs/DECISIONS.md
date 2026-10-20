@@ -26,3 +26,10 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Always requeue stale jobs; rejected because that can retry indefinitely after repeated crashes.
 - **Decision:** `on_finished` callback exceptions are logged and swallowed after job state is persisted.
 - **Alternatives:** Let callbacks terminate the worker; rejected because notifications are non-critical to job execution.
+## T04
+
+- **Date:** 2026-10-20
+- **Decision:** ComfyUI integration uses synchronous `httpx.Client` with injectable transports; production calls remain explicit while tests use `MockTransport`.
+- **Alternatives:** Async client; rejected because the current queue workers and executor interfaces are synchronous.
+- **Decision:** Checked-in workflows are strict placeholder contracts and must be replaced with exported ComfyUI API JSON before real generation.
+- **Alternatives:** Pretend placeholder graphs are runnable; rejected because model/node availability is deployment-specific.

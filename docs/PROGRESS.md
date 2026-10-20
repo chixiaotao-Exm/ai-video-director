@@ -28,3 +28,10 @@
 - Fixed stale job recovery to fail exhausted attempts with `worker crashed` and requeue only retryable jobs.
 - Logged and swallowed `on_finished` callback exceptions so worker loops continue.
 - Tests: 32 passed.
+## T04 — ComfyUI client and workflow templates
+
+- Added a synchronous HTTP client with upload, submit, poll, output download, timeout, and node-error handling.
+- Added strict typed workflow template rendering and placeholder contracts for image-to-video, TTS, and lipsync.
+- Added configurable local/remote ComfyUI profiles and offline MockTransport tests.
+- Added test network blocking and manual smoke script.
+- Tests: 49 passed.

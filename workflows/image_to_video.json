@@ -1,0 +1,11 @@
+{
+  "1": {
+    "class_type": "REPLACE_WITH_EXPORTED_IMAGE_TO_VIDEO_WORKFLOW",
+    "inputs": {
+      "image": "{{image}}",
+      "prompt": "{{prompt}}",
+      "duration_s": "{{duration_s}}",
+      "seed": "{{seed}}"
+    }
+  }
+}
