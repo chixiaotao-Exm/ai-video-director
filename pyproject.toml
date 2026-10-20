@@ -27,8 +27,13 @@ analysis = [
   "faster-whisper>=1",
   "scenedetect[opencv]>=0.6",
 ]
+api = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "python-multipart>=0.0.9",
+]
 all = [
-  "avd[llm,analysis]",
+  "avd[llm,analysis,api]",
 ]
 
 [tool.setuptools]

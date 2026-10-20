@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     workflow_dir: Path | None = None
     job_estimated_costs: dict[str, float] = Field(default_factory=dict)
     llm_max_output_tokens: int = Field(default=4096, gt=0)
+    max_upload_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
 
     model_config = SettingsConfigDict(
         env_prefix="AVD_",

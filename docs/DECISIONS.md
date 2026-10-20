@@ -73,3 +73,15 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Overwrite partial retry outputs or invent multi-sample workflow inputs; rejected.
 - **Decision:** Final media is normalized to the first shot's even dimensions, 30 fps, stereo 48 kHz audio, with silence for missing audio, visible AI-generated text and metadata. Each shot subtitle uses actual voice duration.
 - **Alternatives:** Require identical generated stream formats or omit disclosures; rejected.
+
+## T09
+
+- **Date:** 2026-10-20
+- **Decision:** Runtime composition is shared by HTTP, director and future CLI; tools are project-scoped and validate Pydantic inputs. Authoring work is queued in the API lane, so chat returns job IDs immediately.
+- **Alternatives:** Run analysis synchronously inside chat; rejected because it prevents continued conversation.
+- **Decision:** Human checkpoint and bounded budget approvals live in separate API operations, not model-callable tools. Approval fingerprints become stale when reviewed versions/recipes change; executor start rechecks consent, review and recipe freshness.
+- **Alternatives:** Let the director pass self-asserted approval booleans; rejected because it bypasses user checkpoints.
+- **Decision:** SSE polls persisted terminal job state and supports event cursors, so API and worker may be separate processes. Media serving only permits known media extensions inside data_dir, never DB or secrets.
+- **Alternatives:** Process-local notification queues or exposing the whole data directory; rejected for persistence and containment.
+- **Decision:** Test network guard permits only socketpair construction for Windows asyncio wakeup pipes; outbound service connections remain blocked.
+- **Alternatives:** Disable network blocking for API tests; rejected.

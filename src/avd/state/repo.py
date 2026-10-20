@@ -92,10 +92,26 @@ class ProjectRepo:
 
         require_usable(character)
         require_usable(voice)
+        character_changed = project.character_id != character.id
+        voice_changed = project.voice_id != voice.id
         project.character = character
         project.voice = voice
         project.character_id = character.id
         project.voice_id = voice.id
+        for node in project.nodes:
+            if character_changed and node.kind == NodeKind.SHOT_FRAME:
+                self.update_recipe(node, {
+                    "character_id": character.id,
+                    "reference_images": copy.deepcopy(character.reference_images),
+                    "appearance_prompt": character.fixed_appearance_prompt,
+                    "lora_path": character.lora_path,
+                })
+            if voice_changed and node.kind == NodeKind.VOICEOVER:
+                self.update_recipe(node, {
+                    "voice_id": voice.id, "sample_audio_paths": copy.deepcopy(voice.sample_audio_paths),
+                    "default_params": copy.deepcopy(voice.default_params), "engine": voice.engine,
+                    "engine_voice_id": voice.engine_voice_id, "model_path": voice.model_path,
+                })
         self.session.flush()
         return project
 

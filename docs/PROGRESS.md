@@ -66,3 +66,11 @@
 - Added two-shot end-to-end tests with real queue/fake handlers, incremental edits, revert cache, failed prerequisites, revoked consent, duplicate scheduling and callback replay.
 - Tests: 195 passed, 2 skipped (real FFmpeg media checks unavailable on this PATH).
 - External requirements: exported runnable ComfyUI workflows/models, enabled image API key/model, explicit executor cost estimates, FFmpeg with libx264/subtitles/drawtext filters. No paid calls made.
+
+## T09 — director and HTTP API
+
+- Added all 17 validated director tools, persisted tool-use history, bounded loops, live SDK routing through the router, and durable human reviews/budget approvals.
+- Added project/source/asset/consent/chat/status/version/revert/job APIs, safe bounded uploads/media serving, and SSE from durable jobs.
+- Added shared Runtime and API-lane analysis/script handlers; executor start rechecks stale recipes, reviews, budget and consent. Asset replacement updates materialized recipes and dirties only relevant chains.
+- Tests: 245 passed, 3 skipped (two FFmpeg cases and Windows symlink capability), one upstream Starlette/httpx deprecation warning.
+- Deployment is a local single-user app; provider keys, workers and exported ComfyUI workflows are still required for real generation. No paid calls made.

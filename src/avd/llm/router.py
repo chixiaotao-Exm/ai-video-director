@@ -36,12 +36,14 @@ class LLMRouter:
         ledger: CostLedger | None = None,
         project: Project | None = None,
         budget_guard: BudgetGuard | None = None,
+        confirmed: bool = False,
     ) -> None:
         self.settings = settings or Settings()
         self.providers: dict[str, Provider] = dict(providers or {})
         self.ledger = ledger
         self.project = project
         self.budget_guard = budget_guard or BudgetGuard(self.settings.confirm_threshold)
+        self.confirmed = confirmed
 
     def route(self, role: str) -> LLMRoute:
         route = self.settings.llm_route(role)
@@ -89,7 +91,7 @@ class LLMRouter:
                 estimated_cost = self.ledger.estimate(
                     route.provider, route.model, estimated_input, self.settings.llm_max_output_tokens
                 )
-            self.budget_guard.check(current_project, estimated_cost or 0.0, confirmed=confirmed)
+            self.budget_guard.check(current_project, estimated_cost or 0.0, confirmed=confirmed or self.confirmed)
         response = provider.chat(route.model, deepcopy(messages), deepcopy(tools))
         if self.ledger is not None and current_project is not None:
             self.ledger.record(
