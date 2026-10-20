@@ -39,6 +39,7 @@ def create_engine(
     if url.startswith("sqlite"):
         connect_args = dict(kwargs.pop("connect_args", {}))
         connect_args.setdefault("check_same_thread", False)
+        connect_args.setdefault("timeout", 30)
         engine_kwargs["connect_args"] = connect_args
     engine_kwargs.update(kwargs)
     return sqlalchemy_create_engine(url, **engine_kwargs)
@@ -64,6 +65,9 @@ def create_session_factory(
 
 def init_db(engine: Engine) -> None:
     """Create all state tables for a new database."""
+
+    # Importing the job model registers it on the shared declarative metadata.
+    from avd.jobs.models import Job  # noqa: F401
 
     Base.metadata.create_all(engine)
 
