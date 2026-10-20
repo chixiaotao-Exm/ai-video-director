@@ -84,3 +84,7 @@ All implementation checks are offline. Real API access, rented GPU installation,
 ## T17a browser API audit
 
 Added regression coverage for settings precedence/atomic failure/secret masking (including malformed inputs), loopback Host and cross-origin denial, all workspace read/actions, budget floors and reservations, retry consent/review/stale-recipe checks, scoped regeneration and safe thumbnails/log redaction. Connection probes are explicit user actions only; model probes use the normal project ledger. T17's requested local settings file intentionally supersedes the older env-only storage convention. Browser UI and managed worker integration remain the following T17 commits.
+
+## T17b lifecycle audit
+
+Managed worker start is idempotent, lane controls preserve other workers, stop is bounded and rotates unfinished claim tokens on uncertain cleanup. API tests verify lifespan startup/shutdown and origin enforcement; CLI tests verify default/explicit flags. Worker status distinguishes server-owned process state from all running queue jobs. Browser UI integration and visual checks remain T17c/T17d.

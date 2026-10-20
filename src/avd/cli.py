@@ -119,6 +119,10 @@ def _parser() -> argparse.ArgumentParser:
     serve = commands.add_parser("serve", help="Serve the web workspace (requires avd[api])")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
+    workers = serve.add_mutually_exclusive_group()
+    workers.add_argument("--with-workers", dest="with_workers", action="store_true")
+    workers.add_argument("--no-workers", dest="with_workers", action="store_false")
+    serve.set_defaults(with_workers=True)
     return parser
 
 
@@ -389,7 +393,11 @@ def _run(runtime: Runtime, args: argparse.Namespace) -> Any:
             from avd.api.app import create_app
         except ImportError as exc:
             raise RuntimeError("Serving requires the API extra: pip install 'avd[api]'") from exc
-        uvicorn.run(create_app(runtime=runtime), host=args.host, port=args.port)
+        uvicorn.run(
+            create_app(runtime=runtime, with_workers=args.with_workers),
+            host=args.host,
+            port=args.port,
+        )
         return None
     raise ValueError(f"Unknown command: {args.command}")
 

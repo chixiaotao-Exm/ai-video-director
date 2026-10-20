@@ -130,3 +130,9 @@
 - Added atomic local settings with whole-field precedence, write-only masked credentials and explicit budgeted connection checks. Enforced loopback Host and same-origin browser mutations on every route, and sanitized validation/legacy job diagnostics.
 - Added dashboard thumbnails, global job filtering/cancel/retry, scoped shot regeneration, ledger aggregations/budget edits, system readiness and bounded redacted logs. No automatic external probes.
 - Verification: 635 passed, 2 Windows symlink skips, 1 upstream TestClient warning; Ruff/format/mypy green. All tests use offline transports/providers. The existing UI is replaced in T17c; integrated worker controls follow in T17b.
+
+## T17b — worker supervisor in serve
+
+- avd serve now starts one managed process per lane by default; --with-workers/--no-workers control startup. Lifespan shuts down owned children before closing the database; browser endpoints start/stop/report each lane.
+- Workers reload saved settings between jobs, preserve execution snapshots and model grouping, and fence only their own uncertain active claims after forced shutdown. Independently launched workers remain untouched.
+- Verification: 660 passed, 2 Windows symlink skips, 1 upstream TestClient warning; Ruff/format/mypy green. Fake-worker API/lifespan/CLI tests and separate offline Windows spawn smoke passed; no child processes remain after that smoke.

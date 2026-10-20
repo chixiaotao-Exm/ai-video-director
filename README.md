@@ -24,7 +24,7 @@ python -m pip install -e ".[llm,analysis]"
 
 ## 配置
 
-所有配置使用 `AVD_` 环境变量或 `.env`；完整变量说明见 [.env.example](.env.example)。`.env` 不提交 Git。
+启动配置可使用 `AVD_` 环境变量或 `.env`；浏览器设置保存到本地 settings.json 并覆盖环境层。完整变量说明见 [.env.example](.env.example)，优先级见下方“浏览器设置与本地安全”。本地凭据文件不提交 Git。
 
 - `AVD_DATA_DIR`：媒体和 SQLite 存储位置，默认 `./data`。数据库默认是该目录下的 `state.db`；可用 `AVD_DATABASE_URL` 覆盖。
 - `AVD_ANTHROPIC_API_KEY`、`AVD_OPENAI_API_KEY`、`AVD_GEMINI_API_KEY`：真实服务凭据。每家对应的 `AVD_*_BASE_URL` 支持 relay。
@@ -55,26 +55,25 @@ AVD_COMFYUI_PROFILES={"local":{"base_url":"http://127.0.0.1:8188","timeout":600}
 
 远端 profile 连接 SSH 隧道，例如 `ssh -L 8189:127.0.0.1:8188 user@gpu-host`。ComfyUI 保持绑定远端的 `127.0.0.1`。
 
-## 启动网页与 worker
+## 启动
 
-从仓库根目录、激活虚拟环境后运行：
-
-```text
-uvicorn avd.api.app:app --host 127.0.0.1 --port 8000
-```
-
-打开 `http://127.0.0.1:8000`。API 文档在 `/docs`。这是本地单用户应用。
-
-在另外的终端各启动一个 worker，使用同一份 `.env` 和数据库：
+激活虚拟环境后运行 `avd serve`，然后打开 http://127.0.0.1:8000 。项目、素材授权、生成、版本回退、队列、费用和设置均可在浏览器操作。
 
 ```text
-python scripts/run_worker.py --lane gpu
-python scripts/run_worker.py --lane api
-python scripts/run_worker.py --lane cpu
+avd serve
 ```
 
-GPU lane 启动一个 worker 串行执行；API lane 可以启动多个 worker。网页入队后不等待生成完成，SSE 推送任务完成事件，页面也刷新排队/运行状态。
-关闭用 Ctrl+C。上次异常退出且所有旧 worker 已停止时，可先用 `--recover-stale` 启动一个 worker 恢复中断任务；不要对正在执行的 worker 使用该参数。
+默认启动 GPU/API/CPU 各一个受管 worker；系统页可分别启动、停止和查看状态。关闭服务时先给当前任务宽限期，再安全终止进程树并保留重试/隔离状态。界面只控制本服务启动的进程，不会终止另行启动的 worker。
+
+已有独立 worker 或只想检查项目时：
+
+```text
+avd serve --no-workers
+```
+
+`--with-workers` 显式启用默认行为。独立 worker 仍可使用 `avd worker --lane gpu|api|cpu` 或 `scripts/run_worker.py`。共享 GPU lane 由数据库串行占用约束保护。新设置在受管 worker 下一次领取任务前加载，已排队任务的执行快照不变。
+
+上次异常退出且确认所有旧 worker/子进程均已停止时，才使用 `--recover-stale` 强制恢复。进程清理不确定会隔离对应任务，不能通过反复启动 worker 绕过。API 文档在 `/docs`；此程序是回环地址上的本地单用户应用。
 
 ## 使用流程
 

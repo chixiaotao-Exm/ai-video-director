@@ -394,3 +394,17 @@ def test_serve_uses_requested_bind_without_opening_network(
     assert cli.main(["serve", "--host", "127.0.0.2", "--port", "8123"]) == 0
     assert calls == [{"host": "127.0.0.2", "port": 8123}]
     assert not capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "flags, expected", [([], True), (["--with-workers"], True), (["--no-workers"], False)]
+)
+def test_serve_worker_flags_reach_application(cli_runtime, monkeypatch, capsys, flags, expected):
+    uvicorn = pytest.importorskip("uvicorn")
+    pytest.importorskip("fastapi")
+    observed = []
+    monkeypatch.setattr(
+        uvicorn, "run", lambda app, **kwargs: observed.append(app.state.with_workers)
+    )
+    assert cli.main(["serve", *flags]) == 0
+    assert observed == [expected]

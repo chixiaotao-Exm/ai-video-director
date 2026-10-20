@@ -28,12 +28,14 @@ from starlette.concurrency import run_in_threadpool
 
 from avd.api.security import LocalOnlyMiddleware
 from avd.api.settings_api import install_settings_routes
+from avd.api.workers import install_worker_routes
 from avd.api.workspace import install_workspace_routes, redact_public
 from avd.assets.library import AssetLibrary
 from avd.assets.storage import AssetStorage
 from avd.config import Settings
 from avd.director.review import ReviewRequired, approve, approve_budget, review_status
 from avd.jobs.models import Job, JobLane, JobStatus
+from avd.jobs.supervisor import WorkerSupervisor
 from avd.llm.budget import BudgetExceeded, ConfirmationRequired
 from avd.observability import configure_logging, log_context
 from avd.state.models import Character, Node, NodeKind, Project, Version, Voice
@@ -299,7 +301,13 @@ def _save_upload(
     return destination.relative_to(root).as_posix()
 
 
-def create_app(settings: Settings | None = None, *, runtime: Runtime | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    runtime: Runtime | None = None,
+    with_workers: bool = False,
+    worker_supervisor: WorkerSupervisor | None = None,
+) -> FastAPI:
     """Create an isolated app, optionally using an already configured test runtime."""
 
     @asynccontextmanager
@@ -314,16 +322,30 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
                 application.state.max_upload_bytes = owned_runtime.settings.max_upload_bytes
         active_settings = application.state.runtime.settings
         configure_logging(active_settings.log_format, active_settings.log_level)
+        supervisor = application.state.worker_supervisor
+        if supervisor is None:
+            active_runtime = application.state.runtime
+            supervisor = WorkerSupervisor(active_runtime.settings, active_runtime.queue)
+            application.state.worker_supervisor = supervisor
         try:
+            if with_workers:
+                supervisor.start()
             yield
         finally:
-            if owned_runtime is not None:
-                owned_runtime.close()
-                application.state.runtime = None
+            try:
+                supervisor.close()
+            finally:
+                if worker_supervisor is None:
+                    application.state.worker_supervisor = None
+                if owned_runtime is not None:
+                    owned_runtime.close()
+                    application.state.runtime = None
 
     application = FastAPI(title="AI Video Director", lifespan=lifespan)
     application.add_middleware(LocalOnlyMiddleware)
     application.state.runtime = runtime
+    application.state.worker_supervisor = worker_supervisor
+    application.state.with_workers = with_workers
     application.state.max_upload_bytes = runtime.settings.max_upload_bytes if runtime else None
     static_dir = Path(__file__).with_name("static")
     application.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -428,6 +450,7 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
 
     install_settings_routes(application, current_runtime, refresh_settings)
     install_workspace_routes(application, current_runtime)
+    install_worker_routes(application)
 
     @application.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, error: RequestValidationError) -> JSONResponse:

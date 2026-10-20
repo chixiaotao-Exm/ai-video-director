@@ -167,3 +167,13 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Rebuild the entire project or auto-approve after regeneration; rejected for incremental behavior and review integrity.
 - **Decision:** Restrict pytest discovery to tests/ so ignored generated data and draft artifacts cannot become test modules.
 - **Alternatives:** Rely on filename conventions under data/; rejected because data is not source-controlled test input.
+
+## T17b — managed browser workers
+
+- **Date:** 2026-10-20
+- **Decision:** avd serve defaults to one managed process for each GPU/API/CPU lane; --no-workers disables automatic startup. Browser controls only the server-owned processes, while status also shows independently running queue work.
+- **Alternatives:** Require three extra terminals or kill every worker sharing the database; rejected for the one-command browser workflow and ownership boundaries.
+- **Decision:** Reload effective settings between jobs and reuse Runtime until configuration changes. Preserve constructor overrides, model grouping, queued execution snapshots and immutable outputs.
+- **Alternatives:** Change an in-flight handler's configuration or require app restart after every saved setting; rejected for predictable execution and browser usability.
+- **Decision:** On forced/abnormal managed process exit, fence only its exact unfinished claim and retain a permanent quarantine lease. Rotate its claim token so a late heartbeat/result cannot release the lane. Shutdown signals all children before bounded waits and leaves external workers untouched.
+- **Alternatives:** Recover every running job on server shutdown; rejected because another worker may still own valid work.
