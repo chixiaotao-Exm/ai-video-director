@@ -116,3 +116,32 @@ Known audit findings and external verification requirements are in [docs/REVIEW.
 The asset panel can also generate a fictional character sheet from text. Inspect the generated image in job results, then explicitly confirm consent before assigning it. A paid image smoke records its work in a private database under `data/smoke/image/`.
 
 Workers now recover only expired leases automatically; an active heartbeat prevents live work from being reset. The explicit `--recover-stale` option forces recovery and should only be used after every previous worker has stopped. Use the UI's continue action (or director rebuild with `retry_failed`) to retry corrected failures.
+
+## CLI
+
+安装或更新 editable 包后，虚拟环境内可使用 `avd`（也可 `python -m avd.cli`）：
+
+```text
+avd init
+avd project create --title "My video" --budget 10
+avd project list
+avd project status PROJECT_ID
+avd analyze source.mp4 --project PROJECT_ID
+avd analyze source.mp4 --budget 10
+avd asset character create --name Hero --front uploads/front.png --appearance-prompt "Original character"
+avd asset voice create --name Narrator --sample uploads/sample.wav --engine comfyui
+avd consent confirm character CHARACTER_ID --confirmed-by "Owner"
+avd consent confirm voice VOICE_ID --confirmed-by "Owner"
+avd chat PROJECT_ID
+avd chat PROJECT_ID --message "Summarize progress"
+avd rebuild PROJECT_ID --retry-failed
+avd versions PROJECT_ID NODE_ID
+avd revert PROJECT_ID NODE_ID 1
+avd jobs PROJECT_ID
+avd worker --lane gpu
+avd worker --lane api
+avd worker --lane cpu
+avd serve --host 127.0.0.1 --port 8000
+```
+
+全局 `--data-dir` / `--database-url` 位于子命令之前。`analyze` 会把本地视频复制进 uploads 后入队；不指定项目时新建项目，`--budget` 设置该项目额度。资产创建使用 `data_dir/uploads` 内的相对文件路径（可通过网页上传）。资产绑定与版本审批继续在网页完成；CLI 重建不会绕过这些检查点。`chat` 输入 `/quit` 退出。`worker --once` 执行一个任务，`--recover-stale` 是停止旧 worker 后的强制恢复选项。

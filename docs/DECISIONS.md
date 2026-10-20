@@ -115,3 +115,11 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Mock media or bypass the engine; rejected because the milestone requires a real MP4 and proves incremental behavior.
 - **Decision:** Ambient paid cost/provider settings are ignored for this local stub; the demo project has a zero budget, zero estimated costs and no network-capable provider. The generated character/voice are synthetic and still pass through explicit consent fields.
 - **Alternatives:** Require API keys or treat the synthetic assets as human identity; rejected for offline safety and compliance.
+
+## T13
+
+- **Date:** 2026-10-20
+- **Decision:** Use argparse and the existing Runtime/DirectorTools; CLI outputs JSON for automation and concise errors with nonzero exits. Analysis imports explicit local video inputs, while asset creation accepts uploaded-relative paths consistently with the web tool boundary.
+- **Alternatives:** A new CLI framework or separate business logic; rejected to keep command behavior aligned with HTTP/director gates.
+- **Decision:** CLI generation retains human approvals from the web workflow. Worker commands run one selected lane and support explicit recovery; no model is called by project/asset/status/version commands.
+- **Alternatives:** Silently auto-approve in CLI; rejected because user checkpoints must remain enforced.

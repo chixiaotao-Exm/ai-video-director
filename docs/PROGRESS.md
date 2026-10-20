@@ -94,3 +94,9 @@
 - Added `python -m avd.demo`: real FFmpeg cards, slow zoom clips, sine audio, passthrough lipsync, subtitles and final AI label through the real queue/rebuild engine.
 - Demo output showed 16 initial generated nodes, exactly 4 reruns after the shot-2 line edit, and 4 cache hits on an unchanged recipe. Verified MP4 duration 6 seconds and metadata comment `AI-generated`.
 - Tests: 394 passed, 1 skipped (Windows symlink capability); real-media tests run with repository-local verified FFmpeg/ffprobe. No network or paid calls. Ruff, formatting and mypy all pass.
+
+## T13 — command-line interface
+
+- Added the `avd` console entry point and all requested project, asset, consent, analysis, chat, rebuild, version, job, worker and serve commands.
+- Reused Runtime/DirectorTools with JSON output, safe imported/uploaded paths, explicit budgets and existing approval gates.
+- Tests: 420 passed, 2 skipped (Windows symlink capability); Ruff/format/mypy green. Confirmed the console entry point installs in .venv.
