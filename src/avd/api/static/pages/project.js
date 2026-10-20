@@ -17,12 +17,8 @@ const nodeOf = (project, kind, index = null) => project.nodes.find(node => node.
 const approved = (project, stage) => Boolean(project.reviews?.[stage]?.approved);
 const isReady = nodes => nodes.length > 0 && nodes.every(node => node.status === "clean" && node.current_version_id);
 const currency = value => money(value ?? 0);
-export const tokens = value => {
-  const number = Number(value || 0);
-  if (number >= 1e6) return `${(number / 1e6).toFixed(number >= 1e7 ? 0 : 1)}M`;
-  if (number >= 1e3) return `${(number / 1e3).toFixed(number >= 1e4 ? 0 : 1)}K`;
-  return String(number);
-};
+import {mtokens as tokens} from "../components.js";
+export {tokens};
 const serialize = value => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 
 function output(node, kind) {
@@ -374,9 +370,23 @@ function markdown(text) {
   const html = [];
   let list = null;
   const close = () => { if (list) { html.push(`</${list}>`); list = null; } };
+  let table = null;
+  const flushTable = () => {
+    if (!table) return;
+    const [head, ...body] = table;
+    const cells = (row, tag) => row.map(cell => `<${tag}>${inline(cell)}</${tag}>`).join("");
+    html.push(`<div class="md-table"><table><thead><tr>${cells(head, "th")}</tr></thead><tbody>${body.map(row => `<tr>${cells(row, "td")}</tr>`).join("")}</tbody></table></div>`);
+    table = null;
+  };
   for (const raw of String(text).split("\n")) {
     const line = raw.trimEnd();
     let match;
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      close();
+      if (!/^\s*\|[\s:|-]+\|\s*$/.test(line)) (table ||= []).push(line.trim().slice(1, -1).split("|").map(cell => cell.trim()));
+      continue;
+    }
+    flushTable();
     if ((match = line.match(/^(#{1,4})\s+(.*)$/))) {
       close();
       const level = Math.min(match[1].length + 2, 6);
@@ -396,6 +406,7 @@ function markdown(text) {
     }
   }
   close();
+  flushTable();
   const element = h("div", {class: "message-content markdown"});
   element.innerHTML = html.join("");
   return element;
@@ -406,23 +417,86 @@ const toolLabel = name => {
   return label.startsWith("project.") ? name : label;
 };
 
+// --- Messenger-style conversation -----------------------------------------------
+const GAP_MS = 5 * 60 * 1000;
+
+function clock(value) {
+  if (!value) return "";
+  const when = new Date(/Z|[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`);
+  const now = new Date();
+  const time = when.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit"});
+  if (when.toDateString() === now.toDateString()) return time;
+  return `${when.toLocaleDateString("zh-CN", {month: "numeric", day: "numeric"})} ${time}`;
+}
+
+function mediaBubble(item, side) {
+  const kind = item.kind;
+  let body;
+  if (kind === "image") {
+    const img = h("img", {src: mediaURL(item.path), alt: item.caption || "", loading: "lazy"});
+    body = h("a", {href: mediaURL(item.path), target: "_blank", rel: "noopener", class: "bubble-image"}, img);
+  } else {
+    body = media(item.path, kind, {preload: "metadata", class: `bubble-${kind}`});
+  }
+  return h("div", {class: `bubble bubble-media bubble-${side}`}, body, item.caption ? h("div", {class: "bubble-caption"}, item.caption) : null);
+}
+
+function avatar(side) {
+  return h("div", {class: `avatar avatar-${side}`, "aria-hidden": "true"}, side === "me" ? "我" : "导");
+}
+
+function row(side, ...bubbles) {
+  const content = h("div", {class: "msg-stack"}, ...bubbles);
+  return h("div", {class: `msg-row msg-${side}`}, side === "me" ? [content, avatar(side)] : [avatar(side), content]);
+}
+
 function chatMessages(messages) {
-  if (!messages.length) return h("div", {class: "chat-empty"}, h("h2", {}, p("chatWelcome")), paragraph(p("chatWelcomeHelp")));
-  return h("div", {class: "chat-messages"}, ...messages.map(message => {
+  if (!messages.length) return h("div", {class: "chat-empty"}, h("div", {class: "avatar avatar-director big"}, "导"), h("h2", {}, p("chatWelcome")), paragraph(p("chatWelcomeHelp")));
+  const items = [];
+  let last = 0;
+  let pendingTools = [];
+  const flushTools = () => {
+    if (!pendingTools.length) return;
+    const names = [...new Set(pendingTools.map(call => toolLabel(call.name)))];
+    items.push(h("details", {class: "msg-system tool-trace"},
+      h("summary", {}, `${p("directorDid")}${names.join("、")}`),
+      h("div", {class: "tool-trace-body"}, ...pendingTools.map(call => h("div", {}, h("strong", {}, toolLabel(call.name)), h("pre", {}, serialize(call.detail)))))));
+    pendingTools = [];
+  };
+  for (const message of messages) {
+    const at = message.at ? Date.parse(/Z|[+-]\d\d:\d\d$/.test(message.at) ? message.at : `${message.at}Z`) : 0;
+    if (at && at - last > GAP_MS) { flushTools(); items.push(h("div", {class: "msg-time"}, clock(message.at))); }
+    if (at) last = at;
     if (message.role === "tool") {
-      return h("details", {class: "tool-call"}, h("summary", {}, `${p("toolResult")} · ${toolLabel(message.name)}`), h("pre", {}, serialize(message.content)));
+      pendingTools.push({name: message.name, detail: message.content});
+      if (message.attachments?.length) {
+        flushTools();
+        items.push(row("director", ...message.attachments.map(item => mediaBubble(item, "director"))));
+      }
+      continue;
     }
     if (message.role === "user" && message.event) {
-      return h("div", {class: "chat-event"}, String(message.content).replace(/^\[[^\]]*\]\s*/, "").split("。")[0]);
+      flushTools();
+      items.push(h("div", {class: "msg-system"}, String(message.content).replace(/^\[[^\]]*\]\s*/, "").split("。")[0]));
+      continue;
     }
-    const calls = (message.tool_calls || []).map(call => h("details", {class: "tool-call"}, h("summary", {}, `${p("toolCall")} · ${toolLabel(call.name)}`), h("pre", {}, serialize(call.arguments))));
-    if (message.role === "assistant" && !message.content && calls.length) return h("div", {class: "tool-calls"}, ...calls);
-    return h("article", {class: `chat-message chat-message-${message.role}`},
-      h("div", {class: "message-role"}, message.role === "user" ? p("you") : p("director")),
-      message.content && (message.role === "assistant" ? markdown(message.content) : h("div", {class: "message-content"}, serialize(message.content))),
-      ...calls,
-    );
-  }));
+    if (message.role === "assistant") {
+      for (const call of message.tool_calls || []) pendingTools.push({name: call.name, detail: call.arguments});
+      if (!message.content) continue;
+      flushTools();
+      items.push(row("director", h("div", {class: "bubble bubble-director"}, markdown(message.content))));
+      continue;
+    }
+    if (message.role === "user") {
+      flushTools();
+      const bubbles = [];
+      if (message.content) bubbles.push(h("div", {class: "bubble bubble-me"}, h("div", {class: "message-content"}, serialize(message.content))));
+      for (const item of message.attachments || []) bubbles.push(mediaBubble(item, "me"));
+      items.push(row("me", ...bubbles));
+    }
+  }
+  flushTools();
+  return h("div", {class: "chat-messages"}, ...items);
 }
 
 function activity(jobs) {
@@ -432,8 +506,13 @@ function activity(jobs) {
     : kinds.has("director_report") ? "reporting"
     : kinds.has("write_script") ? "writing"
     : active.length ? "working" : "";
-  return key ? h("div", {class: "chat-activity", role: "status"}, h("span", {class: "pulse", "aria-hidden": "true"}), p(`activity.${key}`)) : null;
+  if (!key) return null;
+  const count = active.length > 1 ? ` · ${active.length} ${p("jobsInFlight")}` : "";
+  return h("div", {class: "chat-activity", role: "status"}, h("span", {class: "pulse", "aria-hidden": "true"}), `${p(`activity.${key}`)}${count}`);
 }
+
+const ATTACH_KINDS = {image: /\.(png|jpe?g|webp|gif)$/i, video: /\.(mp4|mov|webm|mkv)$/i, audio: /\.(wav|mp3|m4a|flac|ogg|aac)$/i};
+const kindOf = name => Object.keys(ATTACH_KINDS).find(kind => ATTACH_KINDS[kind].test(name)) || null;
 
 export async function chatPanel(ctx, projectId, {compact = false} = {}) {
   const [history, initialJobs] = await Promise.all([
@@ -442,9 +521,23 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
   ]);
   const log = h("div", {class: "chat-log", role: "log", "aria-live": "polite", "aria-label": p("chatHistory")}, chatMessages(history));
   const status = h("div", {class: "chat-status"}, activity(initialJobs));
-  const textarea = h("textarea", {name: "message", rows: compact ? 2 : 3, required: true, placeholder: p("messagePlaceholder"), "aria-label": p("message")});
-  const send = button(p("send"), null, {primary: true, type: "submit"});
-  const composer = h("form", {class: "chat-composer"}, textarea, h("div", {class: "chat-composer-actions"}, h("small", {class: "muted"}, p("enterHint")), send));
+  const textarea = h("textarea", {name: "message", rows: compact ? 1 : 2, placeholder: p("messagePlaceholder"), "aria-label": p("message")});
+  const picker = h("input", {type: "file", multiple: true, accept: "image/*,video/*,audio/*", hidden: true});
+  const chips = h("div", {class: "attach-chips"});
+  let files = [];
+  const renderChips = () => {
+    chips.replaceChildren(...files.map((file, index) => h("span", {class: "attach-chip"},
+      `${p(`attach.${kindOf(file.name)}`)} · ${file.name}`,
+      h("button", {type: "button", class: "chip-remove", "aria-label": p("attach.remove"), onclick: () => { files.splice(index, 1); renderChips(); }}, "×"))));
+  };
+  picker.addEventListener("change", () => {
+    for (const file of picker.files || []) if (kindOf(file.name)) files.push(file);
+    picker.value = "";
+    renderChips();
+  });
+  const attach = h("button", {type: "button", class: "attach-button", title: p("attach.title"), "aria-label": p("attach.title"), onclick: () => picker.click()}, "+");
+  const send = h("button", {type: "submit", class: "send-button"}, p("send"));
+  const composer = h("form", {class: "chat-composer"}, chips, h("div", {class: "composer-row"}, attach, textarea, send), picker);
   let signature = JSON.stringify(history);
   let sending = false;
   const scrollEnd = () => { log.scrollTop = log.scrollHeight; };
@@ -455,23 +548,29 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
   composer.addEventListener("submit", async event => {
     event.preventDefault();
     const text = textarea.value.trim();
-    if (!text || sending) return;
-    sending = true; send.disabled = true; textarea.disabled = true;
+    if ((!text && !files.length) || sending) return;
+    sending = true; send.disabled = true; textarea.disabled = true; attach.disabled = true;
+    const outgoing = files;
+    files = []; renderChips();
     const pending = JSON.parse(signature);
-    pending.push({role: "user", content: text});
-    log.replaceChildren(chatMessages(pending));
+    pending.push({role: "user", content: text, at: new Date().toISOString(), attachments: outgoing.map(file => ({kind: kindOf(file.name), path: "", caption: file.name}))});
+    log.replaceChildren(chatMessages(pending.map(message => ({...message, attachments: (message.attachments || []).filter(item => item.path)}))));
+    if (outgoing.length) log.lastElementChild?.append(h("div", {class: "msg-system"}, p("attach.uploading")));
     log.append(h("div", {class: "chat-thinking"}, h("span", {class: "pulse", "aria-hidden": "true"}), p("thinking")));
     scrollEnd();
     try {
-      const result = await api(path(projectId, "/chat"), {method: "POST", body: {message: text}});
+      const attachments = [];
+      for (const file of outgoing) attachments.push(await upload(file));
+      const result = await api(path(projectId, "/chat"), {method: "POST", body: {message: text, attachments}});
       textarea.value = "";
       show(result.history);
     } catch (error) {
       notice(error.message, true);
       show(await api(path(projectId, "/chat")));
       textarea.value = text;
+      files = outgoing; renderChips();
     } finally {
-      sending = false; send.disabled = false; textarea.disabled = false; textarea.focus();
+      sending = false; send.disabled = false; textarea.disabled = false; attach.disabled = false; textarea.focus();
       scrollEnd();
     }
   });
@@ -487,13 +586,14 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
     if (ctx.signal?.aborted || sending) return;
     status.replaceChildren(activity(jobs) || "");
     if (JSON.stringify(messages) !== signature) {
-      const nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+      const nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
       show(messages);
       if (nearEnd) scrollEnd();
     }
   }, 2500);
   requestAnimationFrame(scrollEnd);
-  return h("section", {class: `card panel chat-panel stack${compact ? " compact" : ""}`}, log, status, composer);
+  log.addEventListener("load", event => { if (event.target.tagName === "IMG") scrollEnd(); }, true);
+  return h("section", {class: `chat-panel wechat${compact ? " compact" : ""}`}, log, status, composer);
 }
 
 async function chat(ctx, project, initialJobs) {

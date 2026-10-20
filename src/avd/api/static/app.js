@@ -201,5 +201,14 @@ document.querySelector('#refresh').replaceChildren(icon('refresh',18));
 document.querySelector('#refresh').setAttribute('aria-label',t('common.refresh'));
 document.querySelector('#refresh').addEventListener('click',()=>void renderPage());
 document.addEventListener('keydown',event=>{if(event.key==='Escape')document.body.classList.remove('menu-open');});
+// Every player starts at 10% volume (full volume is loud in headphones); later
+// changes by the user are left alone for that element.
+const DEFAULT_VOLUME = 0.1;
+document.addEventListener('loadstart', event => {
+  const element = event.target;
+  if (!(element instanceof HTMLMediaElement) || element.dataset.volumeSet) return;
+  element.volume = DEFAULT_VOLUME;
+  element.dataset.volumeSet = '1';
+}, true);
 window.addEventListener('hashchange',()=>void renderPage());
 void renderPage();

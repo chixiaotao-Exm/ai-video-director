@@ -754,14 +754,14 @@ def create_app(
             raise HTTPException(422, "Send a message or a file")
         director = DirectorAgent(current_runtime())
         reply = director.chat(project_id, body.message, attachments=attachments)
-        return {"reply": reply, "history": director.history(project_id)}
+        return {"reply": reply, "history": director.transcript(project_id)}
 
     @application.get("/projects/{project_id}/chat")
     def chat_history(project_id: str) -> list[dict[str, Any]]:
         from avd.director.agent import DirectorAgent
 
         ensure_project(project_id)
-        return DirectorAgent(current_runtime()).history(project_id)
+        return DirectorAgent(current_runtime()).transcript(project_id)
 
     @application.get("/projects/{project_id}/status")
     def project_status(project_id: str) -> dict[str, Any]:

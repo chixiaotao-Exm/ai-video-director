@@ -81,34 +81,75 @@ export function drawMindMap(nodes, {seen = new Set(), onSelect} = {}) {
   return svg('svg', {class: 'mindmap-svg', width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': t('mindmap.title')}, edges, boxes);
 }
 
-// A self-refreshing mind map panel; returns the element.
+// A self-refreshing mind map panel: drag with the left button to pan, wheel to zoom.
 export function liveMindMap(ctx, projectId, {compact = false} = {}) {
-  const canvas = h('div', {class: `mindmap-canvas${compact ? ' compact' : ''}`});
+  const canvas = h('div', {class: `mindmap-canvas${compact ? ' compact' : ''}`, style: `height:${compact ? 340 : 620}px`});
   const detail = h('div', {class: 'mindmap-detail muted'}, t('mindmap.hint'));
   const stamp = h('small', {class: 'muted'});
   const seen = new Set();
   let signature = '';
-  let zoom = null; // null = fit to the panel width
-  const applyZoom = () => {
-    const chart = canvas.querySelector('svg');
-    if (!chart) return;
-    const natural = Number(chart.getAttribute('width'));
-    const naturalHeight = Number(chart.getAttribute('height'));
-    const scale = zoom ?? Math.min(1, Math.max(0.3, (canvas.clientWidth - 2) / natural));
-    chart.style.width = `${natural * scale}px`;
-    chart.style.height = `${naturalHeight * scale}px`;
+  const view = {scale: 1, x: 0, y: 0, touched: false};
+  const chart = () => canvas.querySelector('svg');
+  const apply = () => {
+    const element = chart();
+    if (element) element.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   };
-  const zoomBy = factor => {
-    const chart = canvas.querySelector('svg');
-    const current = chart ? chart.getBoundingClientRect().width / Number(chart.getAttribute('width')) : 1;
-    zoom = Math.min(2, Math.max(0.3, current * factor));
-    applyZoom();
+  const fit = () => {
+    const element = chart();
+    if (!element) return;
+    const width = Number(element.getAttribute('width'));
+    const height = Number(element.getAttribute('height'));
+    view.scale = Math.min(1.2, Math.max(0.15, Math.min((canvas.clientWidth - 24) / width, (canvas.clientHeight - 24) / height)));
+    view.x = (canvas.clientWidth - width * view.scale) / 2;
+    view.y = (canvas.clientHeight - height * view.scale) / 2;
+    view.touched = false;
+    apply();
   };
+  const zoomAt = (factor, cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2) => {
+    const next = Math.min(3, Math.max(0.15, view.scale * factor));
+    view.x = cx - (cx - view.x) * (next / view.scale);
+    view.y = cy - (cy - view.y) * (next / view.scale);
+    view.scale = next;
+    view.touched = true;
+    apply();
+  };
+  canvas.addEventListener('wheel', event => {
+    event.preventDefault();
+    const box = canvas.getBoundingClientRect();
+    zoomAt(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - box.left, event.clientY - box.top);
+  }, {passive: false});
+  let drag = null;
+  canvas.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    drag = {x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false, id: event.pointerId};
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+    if (!drag.moved) { drag.moved = true; canvas.setPointerCapture(event.pointerId); canvas.classList.add('dragging'); }
+    view.x = drag.ox + dx;
+    view.y = drag.oy + dy;
+    view.touched = true;
+    apply();
+  });
+  const endDrag = event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (drag.moved) {
+      canvas.classList.remove('dragging');
+      // Swallow the click that ends a drag so it doesn't select a node.
+      canvas.addEventListener('click', stop => { stop.stopPropagation(); stop.preventDefault(); }, {capture: true, once: true});
+    }
+    drag = null;
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
   const tools = h('div', {class: 'toolbar mindmap-zoom'},
-    h('button', {type: 'button', class: 'button small', onclick: () => zoomBy(1 / 1.25), 'aria-label': t('mindmap.zoomOut')}, '−'),
-    h('button', {type: 'button', class: 'button small', onclick: () => { zoom = null; applyZoom(); }}, t('mindmap.fit')),
-    h('button', {type: 'button', class: 'button small', onclick: () => zoomBy(1.25), 'aria-label': t('mindmap.zoomIn')}, '+'));
-  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { if (zoom === null) applyZoom(); }) : null;
+    h('button', {type: 'button', class: 'button small', onclick: () => zoomAt(1 / 1.25), 'aria-label': t('mindmap.zoomOut')}, '−'),
+    h('button', {type: 'button', class: 'button small', onclick: fit}, t('mindmap.fit')),
+    h('button', {type: 'button', class: 'button small', onclick: () => zoomAt(1.25), 'aria-label': t('mindmap.zoomIn')}, '+'));
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { if (!view.touched) fit(); }) : null;
   observer?.observe(canvas);
   ctx.onDispose?.(() => observer?.disconnect());
   const select = node => {
@@ -125,10 +166,13 @@ export function liveMindMap(ctx, projectId, {compact = false} = {}) {
     if (first) data.nodes.forEach(node => seen.add(node.id));
     canvas.replaceChildren(data.nodes.length > 1 ? drawMindMap(data.nodes, {seen, onSelect: select}) : h('p', {class: 'muted mindmap-empty'}, t('mindmap.empty')));
     data.nodes.forEach(node => seen.add(node.id));
-    requestAnimationFrame(applyZoom);
+    // Keep the user's pan/zoom across live updates; fit only until they move it.
+    requestAnimationFrame(() => (view.touched ? apply() : fit()));
     stamp.textContent = data.updated_at ? `${t('mindmap.updated')} ${new Date(data.updated_at).toLocaleTimeString()}` : '';
   }
   void refresh().catch(() => {});
   ctx.poll(refresh, 3000);
-  return h('div', {class: 'mindmap stack'}, h('div', {class: 'row spread wrap'}, h('span', {class: 'mindmap-live'}, h('span', {class: 'pulse', 'aria-hidden': 'true'}), t('mindmap.live'), stamp), tools), canvas, detail);
+  return h('div', {class: 'mindmap stack'},
+    h('div', {class: 'row spread wrap'}, h('span', {class: 'mindmap-live'}, h('span', {class: 'pulse', 'aria-hidden': 'true'}), t('mindmap.live'), stamp), tools),
+    canvas, h('small', {class: 'muted'}, t('mindmap.controls')), detail);
 }

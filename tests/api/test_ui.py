@@ -46,7 +46,12 @@ def test_workspace_and_local_static_resources_are_served(client: TestClient) -> 
     assert response.headers["content-type"].startswith("text/html")
     parser = PageParser()
     parser.feed(response.text)
-    assert set(parser.resources) == {"/static/tokens.css", "/static/styles.css", "/static/app.js"}
+    assert set(parser.resources) == {
+        "/static/tokens.css",
+        "/static/styles.css",
+        "/static/theme.css",
+        "/static/app.js",
+    }
     for path in parser.resources:
         resource = client.get(path)
         assert resource.status_code == 200

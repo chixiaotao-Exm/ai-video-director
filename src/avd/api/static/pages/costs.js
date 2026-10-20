@@ -1,5 +1,5 @@
 import {api} from '../api.js';
-import {h, button, link, field, input, select, form, section, pageHeader, money, date, table, empty} from '../components.js';
+import {h, button, link, field, input, select, form, section, pageHeader, money, date, table, empty, mtokens} from '../components.js';
 import {t} from '../i18n/zh.js';
 
 const PAGE_SIZE = 30;
@@ -112,12 +112,12 @@ export async function render(ctx) {
       totals.replaceChildren(
         section(t('costs.total'), h('strong', {}, money(result.totals.est_cost))),
         section(t('costs.calls'), h('strong', {}, result.totals.count)),
-        section(t('costs.tokens'), h('strong', {}, `${result.totals.input_tokens} / ${result.totals.output_tokens}`), h('small', {class: 'muted'}, t('costs.tokenHint'))),
+        section(t('costs.tokens'), h('strong', {}, `${mtokens(result.totals.input_tokens)} / ${mtokens(result.totals.output_tokens)}`), h('small', {class: 'muted'}, t('costs.tokenHint'))),
       );
       groups.replaceChildren(groupCard(t('costs.byRole'), result.by_role), groupCard(t('costs.byModel'), result.by_model));
       ledger.replaceChildren(result.entries.length ? table(
         ['created', 'project', 'role', 'provider', 'model', 'tokens', 'cost'].map(name => t(`costs.${name}`)),
-        result.entries.map(entry => [date(entry.created_at), link(entry.project_title, `#/projects/${encodeURIComponent(entry.project_id)}`), entry.role, entry.provider, h('span', {style: 'overflow-wrap:anywhere'}, entry.model), `${entry.input_tokens} / ${entry.output_tokens}`, money(entry.est_cost)]),
+        result.entries.map(entry => [date(entry.created_at), link(entry.project_title, `#/projects/${encodeURIComponent(entry.project_id)}`), entry.role, entry.provider, h('span', {style: 'overflow-wrap:anywhere'}, entry.model), `${mtokens(entry.input_tokens)} / ${mtokens(entry.output_tokens)}`, money(entry.est_cost)]),
       ) : empty(t('costs.empty'), t('costs.emptyHint')));
       const active = document.activeElement;
       const ids = new Set(result.projects.map(project => project.id));

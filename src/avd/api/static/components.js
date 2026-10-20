@@ -78,6 +78,12 @@ export function section(title, ...children) { return h('section', {class: 'card'
 export function pageHeader(title, subtitle, actions) { return h('header', {class: 'page-heading'}, h('div', {}, h('h1', {}, title), subtitle && h('p', {class: 'muted'}, subtitle)), actions && h('div', {class: 'toolbar'}, actions)); }
 export function empty(title, description, action) { return h('div', {class: 'empty'}, icon('film', 32), h('h3', {}, title), description && h('p', {class: 'muted'}, description), action); }
 export function badge(status, label) { return h('span', {class: `status status-${status || 'unknown'}`}, h('span', {class: 'status-dot'}), label || t(`status.${status || 'unknown'}`)); }
+// Token counts are always shown in millions, e.g. 0.0016M, 0.250M, 12.35M.
+export function mtokens(value) {
+  const number = Number(value || 0);
+  const digits = number >= 1e6 ? 2 : number >= 1e4 ? 3 : 4;
+  return `${(number / 1e6).toFixed(digits)}M`;
+}
 export function money(value) { return value == null ? t('common.unlimited') : new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 4}).format(value); }
 export function date(value) { return value ? new Date(value.endsWith?.('Z') || /[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'}) : '—'; }
 export function formatDuration(value) { return value == null ? '—' : t('common.seconds', {n: Math.round(value * 10) / 10}); }

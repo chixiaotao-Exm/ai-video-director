@@ -183,6 +183,11 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
         "See this project's background jobs: type, shot, status, attempts, timing, the "
         "error if it failed, and the output files if it finished.",
     ),
+    "list_library": (
+        EmptyInput,
+        "List the asset library: characters, voices (with consent state) and media clips "
+        "(e.g. separated video/audio/vocals/accompaniment) with their file paths.",
+    ),
     "send_media": (
         SendMediaInput,
         "Send images, video or audio files to the user in the chat (like a messaging app). "
@@ -373,6 +378,37 @@ class DirectorTools:
                     }
                 )
             return f"Sent {len(parsed.items)} file(s) to the user."
+        if name == "list_library":
+            from avd.assets.media import list_assets
+
+            with self.runtime.session_factory() as session:
+                library = AssetLibrary(session, AssetStorage(self.runtime.settings.data_dir))
+                return _summary(
+                    {
+                        "characters": [
+                            {
+                                "id": item.id,
+                                "name": item.name,
+                                "consent": item.consent_confirmed,
+                                "images": item.reference_images,
+                            }
+                            for item in library.list_characters()
+                        ],
+                        "voices": [
+                            {
+                                "id": item.id,
+                                "name": item.name,
+                                "consent": item.consent_confirmed,
+                                "samples": item.sample_audio_paths,
+                            }
+                            for item in library.list_voices()
+                        ],
+                        "media": [
+                            {"name": item.name, "kind": item.kind, "path": item.path}
+                            for item in list_assets(session)
+                        ],
+                    }
+                )
         if isinstance(parsed, CheckJobsInput):
             with self.runtime.session_factory() as session:
                 statement = select(Job).where(Job.project_id == self.project_id)

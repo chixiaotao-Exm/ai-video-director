@@ -42,7 +42,8 @@ performer, or reproduce its spoken lines verbatim. Do not add an AI-generated wa
 the user asks. The user does not use budgets; don't discuss money unless asked.
 
 You can check work yourself: use check_jobs to see what is queued, running, finished or
-failed (with errors and outputs) before answering questions about progress. When something
+failed (with errors and outputs) before answering questions about progress, and list_library
+for characters, voices and media clips (separated tracks live there, not in jobs). When something
 worth showing is ready (frames, clips, voice, the final video, separated tracks), send it to
 the user with send_media so it appears in the chat like a message in a messaging app. The user
 may send you images, audio or video; images are shown to you, other files arrive as paths.
@@ -92,6 +93,24 @@ class DirectorAgent:
                 .order_by(ChatMessage.id)
             )
             return [deepcopy(row.message) for row in rows]
+
+    def transcript(self, project_id: str) -> list[dict[str, Any]]:
+        """History for display: each message plus its time (``at``)."""
+
+        with self.runtime.session_factory() as session:
+            self._project(session, project_id)
+            rows = session.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.project_id == project_id)
+                .order_by(ChatMessage.id)
+            )
+            return [
+                {
+                    **deepcopy(row.message),
+                    "at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ]
 
     def _append(self, project_id: str, message: dict[str, Any]) -> None:
         with self.runtime.session_factory() as session:
