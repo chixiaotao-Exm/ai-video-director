@@ -53,3 +53,11 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Persist arbitrary absolute source paths; rejected because project storage must be portable.
 - **Decision:** Silent video has an empty transcript. Real shot detection and Whisper remain optional, lazy imports; Whisper uses CPU/int8 by default to avoid competing with the serial GPU lane.
 - **Alternatives:** Reject silent videos or automatically occupy the GPU; rejected as unnecessary restrictions.
+
+## T07
+
+- **Date:** 2026-10-20
+- **Decision:** Storyboards use contiguous 1-based shot indexes and finite positive durations. Reapplying a same-sized storyboard reuses nodes, updates only changed recipes, and preserves every old version.
+- **Alternatives:** Delete/recreate graphs or regenerate every shot; rejected because versions must be immutable and edits incremental.
+- **Decision:** Changing shot count requires a new project for now. Targeted edits append a readable script snapshot without propagating from the shared script; only the actual frame/video/voice recipe edits propagate.
+- **Alternatives:** Implement graph resizing/archive semantics; deferred because T07 specifies field updates, not shot insertion/deletion.

@@ -50,3 +50,11 @@
 - Added reusable analysis orchestration with injected fakes, separate output directories, immutable versions, cost recording, and failure-safe publication.
 - Tests: 102 passed, 1 skipped (FFmpeg/ffprobe not available on PATH). Manual analysis smoke exits normally without --video.
 - External requirements: FFmpeg, optional analysis dependencies/model downloads, Gemini configuration. No real service called.
+
+## T07 — script and storyboard
+
+- Added validated storyboards generated through the script role with consent checks and originality instructions.
+- Applied per-shot character/voice/camera recipes, connected analysis to the shared script, and preserved immutable snapshots.
+- Added targeted edits and same-count reapplication that dirty only changed chains.
+- Tests: 132 passed, 1 skipped (FFmpeg unavailable). No live model used.
+- Deliberate limit: changing shot count requires a new project; field edits are incremental.
