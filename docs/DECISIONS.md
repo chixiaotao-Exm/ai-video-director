@@ -177,3 +177,11 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Change an in-flight handler's configuration or require app restart after every saved setting; rejected for predictable execution and browser usability.
 - **Decision:** On forced/abnormal managed process exit, fence only its exact unfinished claim and retain a permanent quarantine lease. Rotate its claim token so a late heartbeat/result cannot release the lane. Shutdown signals all children before bounded waits and leaves external workers untouched.
 - **Alternatives:** Recover every running job on server shutdown; rejected because another worker may still own valid work.
+
+## T17c — white interface
+
+- **Date:** 2026-10-20
+- **Decision:** Use vanilla ES modules, a hash router and native controls/dialogs. Shared tokens own the white/black/low-saturation palette; labels live in i18n/zh.js. Media may keep its own colors.
+- **Alternatives:** A framework/build pipeline or CSS library; rejected because T17 explicitly requires a build-free interface and no CDN.
+- **Decision:** Keep real user approvals and consent dialogs explicit with unchecked required checkboxes and named actors. Poll changing queue/log data without replacing active forms; use SSE for project completion notices.
+- **Alternatives:** Auto-approve transitions or rebuild the page every polling cycle; rejected for review integrity and preserving in-progress edits.

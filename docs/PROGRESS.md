@@ -136,3 +136,9 @@
 - avd serve now starts one managed process per lane by default; --with-workers/--no-workers control startup. Lifespan shuts down owned children before closing the database; browser endpoints start/stop/report each lane.
 - Workers reload saved settings between jobs, preserve execution snapshots and model grouping, and fence only their own uncertain active claims after forced shutdown. Independently launched workers remain untouched.
 - Verification: 660 passed, 2 Windows symlink skips, 1 upstream TestClient warning; Ruff/format/mypy green. Fake-worker API/lifespan/CLI tests and separate offline Windows spawn smoke passed; no child processes remain after that smoke.
+
+## T17c — white browser workspace
+
+- Replaced dark single-page UI with pure-white tokens, responsive shell/hash router and Chinese ES-module pages for dashboard, six project tabs, assets, jobs, costs, settings and system.
+- Browser forms cover uploads/consent, storyboard edits, scoped regeneration, version reverts, all generation actions, budgets, settings and managed workers. Project events use SSE with polling fallback; user-supplied content is rendered with DOM text nodes.
+- Verification: 661 passed, 2 Windows symlink skips, 1 upstream TestClient warning; Ruff/format/mypy green; all JavaScript modules pass node --check. Visual screenshots and layout polish follow in T17d.
