@@ -100,6 +100,29 @@ class LLMRouter:
         route = self.route(role)
         provider = self._provider(route.provider)
         current_project = project if project is not None else self.project
+        self._preflight(
+            route, provider, current_project, messages, tools, estimated_cost, confirmed
+        )
+        assert route.model is not None
+        try:
+            response = provider.chat(route.model, deepcopy(messages), deepcopy(tools))
+        except ProviderResponseError as exc:
+            self._record_response(current_project, role, route, exc.response)
+            raise
+        self._record_response(current_project, role, route, response)
+        return response
+
+    def _preflight(
+        self,
+        route: LLMRoute,
+        provider: Provider,
+        current_project: Project | None,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        estimated_cost: float | None,
+        confirmed: bool,
+    ) -> None:
+        """Share accounting, reservations and human approval across model calls."""
         if self.ledger is not None and current_project is None:
             raise ProviderConfigurationError("A cost ledger requires a project for every call")
         if not isinstance(provider, FakeProvider) and (
@@ -122,58 +145,55 @@ class LLMRouter:
             if self.confirmation_check is not None:
                 confirmed = self.confirmation_check(current_project, estimated_cost or 0.0)
             self.budget_guard.check(current_project, estimated_cost or 0.0, confirmed=confirmed)
-        try:
-            response = provider.chat(route.model, deepcopy(messages), deepcopy(tools))
-        except ProviderResponseError as exc:
-            if self.ledger is not None and current_project is not None:
-                self.ledger.record(
-                    current_project,
-                    role,
-                    route.provider,
-                    route.model,
-                    exc.response.input_tokens,
-                    exc.response.output_tokens,
-                )
-            raise
-        if self.ledger is not None and current_project is not None:
+
+    def _record_response(
+        self, project: Project | None, role: str, route: LLMRoute, response: ChatResponse
+    ) -> None:
+        assert route.model is not None
+        if self.ledger is not None and project is not None:
             self.ledger.record(
-                current_project,
+                project,
                 role,
                 route.provider,
                 route.model,
                 response.input_tokens,
                 response.output_tokens,
             )
-        return response
 
-    def search(self, query: str, *, project: Project | None = None) -> ChatResponse:
+    def search(
+        self,
+        query: str,
+        *,
+        project: Project | None = None,
+        estimated_cost: float | None = None,
+        confirmed: bool = False,
+    ) -> ChatResponse:
         """Run a cited web search through the configured search provider."""
 
         route = self.route("web_search")
         provider = self._provider(route.provider)
-        if not hasattr(provider, "search"):
+        search = getattr(provider, "search", None)
+        if not callable(search):
             raise ProviderConfigurationError(
                 f"Provider {route.provider!r} does not support web search"
             )
         current_project = project if project is not None else self.project
-        if not isinstance(provider, FakeProvider) and (
-            self.ledger is None or current_project is None
-        ):
-            raise ProviderConfigurationError("Live LLM calls require a project and CostLedger")
+        self._preflight(
+            route,
+            provider,
+            current_project,
+            [{"role": "user", "content": query}],
+            None,
+            estimated_cost,
+            confirmed,
+        )
         assert route.model is not None
-        if current_project is not None:
-            acquire_project_budget(current_project)
-            self.budget_guard.check(current_project, 0.0, confirmed=True)
-        response: ChatResponse = provider.search(route.model, query)
-        if self.ledger is not None and current_project is not None:
-            self.ledger.record(
-                current_project,
-                "web_search",
-                route.provider,
-                route.model,
-                response.input_tokens,
-                response.output_tokens,
-            )
+        try:
+            response: ChatResponse = search(route.model, query)
+        except ProviderResponseError as exc:
+            self._record_response(current_project, "web_search", route, exc.response)
+            raise
+        self._record_response(current_project, "web_search", route, response)
         return response
 
     def structured(

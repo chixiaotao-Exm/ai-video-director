@@ -30,6 +30,23 @@ def delete_project(session: Session, data_dir: Path, project_id: str) -> None:
     """
     from avd.assets.media import MediaAsset
 
+    sqlite = session.get_bind().dialect.name == "sqlite"
+    if sqlite:
+        connection = session.connection()
+        # SQLAlchemy may have autobegun a Session transaction even though sqlite3
+        # has not started one for SELECTs. Conversely a caller's write/savepoint
+        # may already own a real transaction, which must not be restarted.
+        driver_connection = connection.connection.driver_connection
+        assert driver_connection is not None
+        if driver_connection.in_transaction:
+            # Upgrade a deferred transaction before reading job status. A stale
+            # SQLite snapshot must fail here rather than delete a newly claimed job.
+            connection.execute(
+                text("UPDATE projects SET id = id WHERE id = :id"), {"id": project_id}
+            )
+        else:
+            connection.execute(text("BEGIN IMMEDIATE"))
+
     project = session.get(Project, project_id)
     if project is None:
         raise KeyError("Project not found")
@@ -45,7 +62,6 @@ def delete_project(session: Session, data_dir: Path, project_id: str) -> None:
     )
     session.flush()
     session.expunge_all()
-    sqlite = session.get_bind().dialect.name == "sqlite"
     if sqlite:
         session.execute(text("PRAGMA foreign_keys=ON"))
         session.execute(text("DROP TRIGGER IF EXISTS versions_no_delete"))
