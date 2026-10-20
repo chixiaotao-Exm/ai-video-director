@@ -332,7 +332,8 @@ def test_worker_loop_uses_saved_settings_on_next_job_and_reuses_unchanged_runtim
 
     for _ in range(3):
         queue.submit("cpu", "work", {})
-    settings = Settings(_env_file=None, data_dir=tmp_path)
+    # One slot keeps the per-job order deterministic for this reload check.
+    settings = Settings(_env_file=None, data_dir=tmp_path, lane_concurrency={"cpu": 1})
     store = SettingsStore(settings)
     store.update({"director_model": "first-model"})
     stop = Event()
@@ -415,3 +416,42 @@ def test_stop_all_signals_every_lane_before_waiting(queue, tmp_path):
     factory.processes[0].join = check_all_signals
     supervisor.stop()
     assert all(process.closed for process in factory.processes)
+
+
+def test_worker_loop_runs_parallel_slots(queue, tmp_path):
+    import threading
+    import time
+
+    for _ in range(4):
+        queue.submit("api", "work", {})
+    settings = Settings(_env_file=None, data_dir=tmp_path, lane_concurrency={"api": 4})
+    stop = Event()
+    lock = threading.Lock()
+    state = {"running": 0, "peak": 0, "done": 0}
+
+    class FakeRuntime:
+        def __init__(self, current):
+            self.queue = queue
+            self.settings = current
+
+        def build_worker(self, lane):
+            def handler(job):
+                with lock:
+                    state["running"] += 1
+                    state["peak"] = max(state["peak"], state["running"])
+                time.sleep(0.3)
+                with lock:
+                    state["running"] -= 1
+                    state["done"] += 1
+                    if state["done"] == 4:
+                        stop.set()
+                return {}
+
+            return Worker(queue, lane, {"work": handler})
+
+        def close(self):
+            pass
+
+    run_worker_loop(settings, JobLane.API, stop, ActiveClaim.create(), runtime_factory=FakeRuntime)
+    assert state["done"] == 4
+    assert state["peak"] > 1

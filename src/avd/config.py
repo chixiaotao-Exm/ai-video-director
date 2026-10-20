@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     job_timeouts: dict[str, Annotated[float, Field(gt=0, allow_inf_nan=False)]] = Field(
         default_factory=dict
     )
+    # Jobs run in parallel per lane; one GPU usually holds one large model at a time.
+    lane_concurrency: dict[str, Annotated[int, Field(ge=1, le=16)]] = Field(
+        default_factory=lambda: {"gpu": 1, "api": 4, "cpu": 2}
+    )
     worker_shutdown_grace_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     comfyui_url: str | None = None
     smoke_workflow: Path | None = None

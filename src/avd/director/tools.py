@@ -113,6 +113,20 @@ class SeparateInput(ToolInput):
     )
 
 
+class SendItem(ToolInput):
+    path: str = Field(min_length=1, max_length=1024, description="A media path under data_dir.")
+    caption: str | None = Field(default=None, max_length=500)
+
+
+class SendMediaInput(ToolInput):
+    items: list[SendItem] = Field(min_length=1, max_length=12)
+
+
+class CheckJobsInput(ToolInput):
+    status: Literal["all", "active", "failed", "succeeded"] = "all"
+    limit: int = Field(default=15, ge=1, le=50)
+
+
 class MindMapInput(ToolInput):
     nodes: list[mindmap.MindMapItem] = Field(default_factory=list, max_length=40)
     remove: list[str] = Field(default_factory=list, max_length=40)
@@ -164,6 +178,16 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
         "Split a video into a silent video track and an audio track and save both to the "
         "asset library (媒体素材), e.g. to reuse the music or study the picture alone.",
     ),
+    "check_jobs": (
+        CheckJobsInput,
+        "See this project's background jobs: type, shot, status, attempts, timing, the "
+        "error if it failed, and the output files if it finished.",
+    ),
+    "send_media": (
+        SendMediaInput,
+        "Send images, video or audio files to the user in the chat (like a messaging app). "
+        "Use output paths from check_jobs, list_versions or the asset library.",
+    ),
     "update_mindmap": (
         MindMapInput,
         "Add or update nodes in the live mind map the user watches: insights, options, "
@@ -188,6 +212,20 @@ _GENERATORS = {
 }
 
 
+_MEDIA_KINDS = {
+    "image": (".png", ".jpg", ".jpeg", ".webp", ".gif"),
+    "video": (".mp4", ".mov", ".webm", ".mkv"),
+    "audio": (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac"),
+}
+
+
+def media_kind(path: str) -> str | None:
+    lowered = path.lower()
+    return next(
+        (kind for kind, suffixes in _MEDIA_KINDS.items() if lowered.endswith(suffixes)), None
+    )
+
+
 def _summary(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
@@ -206,6 +244,11 @@ class DirectorTools:
         self.runtime = runtime
         self.project_id = project_id
         self.latest_user_message = latest_user_message
+        self._attachments: list[dict[str, str]] = []
+
+    def take_attachments(self) -> list[dict[str, str]]:
+        sent, self._attachments = self._attachments, []
+        return sent
 
     @staticmethod
     def schemas() -> list[dict[str, Any]]:
@@ -315,6 +358,70 @@ class DirectorTools:
                         "message": "Saved to the asset library under 媒体素材.",
                     }
                 )
+        if isinstance(parsed, SendMediaInput):
+            root = self.runtime.settings.data_dir.expanduser().resolve()
+            for item in parsed.items:
+                kind = media_kind(item.path)
+                target = (root / item.path).resolve()
+                if kind is None or not target.is_relative_to(root) or not target.is_file():
+                    raise ValueError(f"Not a media file under data_dir: {item.path}")
+                self._attachments.append(
+                    {
+                        "kind": kind,
+                        "path": target.relative_to(root).as_posix(),
+                        "caption": item.caption or "",
+                    }
+                )
+            return f"Sent {len(parsed.items)} file(s) to the user."
+        if isinstance(parsed, CheckJobsInput):
+            with self.runtime.session_factory() as session:
+                statement = select(Job).where(Job.project_id == self.project_id)
+                if parsed.status == "active":
+                    statement = statement.where(
+                        Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING])
+                    )
+                elif parsed.status == "failed":
+                    statement = statement.where(Job.status == JobStatus.FAILED)
+                elif parsed.status == "succeeded":
+                    statement = statement.where(Job.status == JobStatus.SUCCEEDED)
+                rows = session.scalars(
+                    statement.order_by(Job.created_at.desc()).limit(parsed.limit)
+                ).all()
+                node_index = {
+                    node.id: node
+                    for node in session.scalars(
+                        select(Node).where(Node.project_id == self.project_id)
+                    )
+                }
+                report = []
+                for job in rows:
+                    node = node_index.get(job.node_id or "")
+                    outputs: Any = None
+                    if node is not None and node.current_version is not None:
+                        outputs = node.current_version.output_paths
+                    elif isinstance(job.result, dict):
+                        outputs = {
+                            key: value
+                            for key, value in job.result.items()
+                            if isinstance(value, str) and media_kind(value)
+                        } or None
+                    report.append(
+                        {
+                            "id": job.id,
+                            "type": job.job_type,
+                            "lane": job.lane.value,
+                            "kind": node.kind.value if node else None,
+                            "shot": node.shot_index if node else None,
+                            "status": job.status.value,
+                            "attempts": f"{job.attempts}/{job.max_attempts}",
+                            "created_at": job.created_at,
+                            "started_at": job.started_at,
+                            "finished_at": job.finished_at,
+                            "error": (job.error or "").strip().splitlines()[-1:] or None,
+                            "outputs": outputs,
+                        }
+                    )
+            return _summary(report)
         if isinstance(parsed, MindMapInput):
             with self.runtime.session_factory() as session:
                 project = self._project(session)

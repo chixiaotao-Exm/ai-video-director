@@ -105,7 +105,8 @@ class AssetsInput(InputModel):
 
 
 class ChatInput(InputModel):
-    message: str = Field(min_length=1, validation_alias=AliasChoices("message", "text"))
+    message: str = Field(default="", validation_alias=AliasChoices("message", "text"))
+    attachments: list[str] = Field(default_factory=list, max_length=9)
 
 
 class RevertInput(InputModel):
@@ -550,7 +551,7 @@ def create_app(
                 _save_upload,
                 file,
                 media_root(),
-                ASSET_EXTENSIONS,
+                ASSET_EXTENSIONS | VIDEO_EXTENSIONS,
                 application.state.max_upload_bytes,
             )
         finally:
@@ -739,10 +740,20 @@ def create_app(
     @application.post("/projects/{project_id}/chat")
     def chat(project_id: str, body: ChatInput) -> dict[str, Any]:
         from avd.director.agent import DirectorAgent
+        from avd.director.tools import media_kind
 
         ensure_project(project_id)
+        attachments = []
+        for path in body.attachments:
+            kind = media_kind(path)
+            if kind is None:
+                raise HTTPException(422, "Only image, video and audio files can be sent")
+            _safe_path(media_root(), path, frozenset({f".{path.rsplit('.', 1)[-1].lower()}"}))
+            attachments.append({"kind": kind, "path": path, "caption": ""})
+        if not body.message.strip() and not attachments:
+            raise HTTPException(422, "Send a message or a file")
         director = DirectorAgent(current_runtime())
-        reply = director.chat(project_id, body.message)
+        reply = director.chat(project_id, body.message, attachments=attachments)
         return {"reply": reply, "history": director.history(project_id)}
 
     @application.get("/projects/{project_id}/chat")

@@ -41,6 +41,12 @@ A reference video supplies structure and style only: never copy its identity, cl
 performer, or reproduce its spoken lines verbatim. Do not add an AI-generated watermark unless
 the user asks. The user does not use budgets; don't discuss money unless asked.
 
+You can check work yourself: use check_jobs to see what is queued, running, finished or
+failed (with errors and outputs) before answering questions about progress. When something
+worth showing is ready (frames, clips, voice, the final video, separated tracks), send it to
+the user with send_media so it appears in the chat like a message in a messaging app. The user
+may send you images, audio or video; images are shown to you, other files arrive as paths.
+
 Keep the live mind map current with update_mindmap. The user watches it update while you
 talk, so it should show your chain of thought: insights from the reference (parent
 "reference"), the creative directions you propose (options), what the user picked
@@ -110,14 +116,47 @@ class DirectorAgent:
                 # raises. Release the transaction before any tool opens a session.
                 session.commit()
 
-    def chat(self, project_id: str, text: str, *, event: bool = False) -> str:
+    def _provider_view(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Turn stored attachments into model input: images are shown, other media named."""
+        root = self.runtime.settings.data_dir.expanduser().resolve()
+        view: list[dict[str, Any]] = []
+        for message in messages:
+            attachments = message.get("attachments") or []
+            clean = {key: value for key, value in message.items() if key != "attachments"}
+            if attachments and message["role"] == "user":
+                notes = [
+                    f"[{item['kind']}: {item['path']}]"
+                    for item in attachments
+                    if item["kind"] != "image"
+                ]
+                text = str(message.get("content") or "")
+                if notes:
+                    text = (text + "\n" if text else "") + "用户发送的文件：" + " ".join(notes)
+                parts: list[dict[str, Any]] = [{"type": "text", "text": text or "（图片）"}]
+                parts.extend(
+                    {"type": "image", "path": str(root / item["path"])}
+                    for item in attachments
+                    if item["kind"] == "image" and (root / item["path"]).is_file()
+                )
+                clean["content"] = parts if len(parts) > 1 else text
+            view.append(clean)
+        return view
+
+    def chat(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        event: bool = False,
+        attachments: list[dict[str, str]] | None = None,
+    ) -> str:
         """Persist a user turn, execute requested tools, and return the final reply.
 
         ``event`` marks an application notice (e.g. analysis finished) sent on the
         user's behalf; it cannot approve checkpoints.
         """
 
-        if not isinstance(text, str) or not text.strip():
+        if not isinstance(text, str) or (not text.strip() and not attachments):
             raise ValueError("Chat text must be a non-empty string")
 
         # Tools also use the runtime; import here to keep package imports acyclic.
@@ -130,13 +169,15 @@ class DirectorAgent:
         user_message: dict[str, Any] = {"role": "user", "content": text}
         if event:
             user_message["event"] = True
+        if attachments:
+            user_message["attachments"] = attachments
         self._append(project_id, user_message)
         messages.append(user_message)
         tools = DirectorTools(self.runtime, project_id, None if event else text)
         schemas = tools.schemas()
 
         for _ in range(self.max_rounds):
-            response = self._respond(project_id, messages, schemas)
+            response = self._respond(project_id, self._provider_view(messages), schemas)
             assistant_message = response.as_message()
             self._append(project_id, assistant_message)
             messages.append(assistant_message)
@@ -151,12 +192,16 @@ class DirectorAgent:
                     # unavailable tools, so the next model turn can recover.
                     detail = " ".join(str(exc).split())[:1000]
                     result = f"Tool error ({call.name}): {type(exc).__name__}: {detail}"
-                tool_message = {
+                tool_message: dict[str, Any] = {
                     "role": "tool",
                     "tool_call_id": call.id,
                     "name": call.name,
                     "content": result,
                 }
+                sent = tools.take_attachments()
+                if sent:
+                    # Shown to the user as media bubbles; the model sees the text result.
+                    tool_message["attachments"] = sent
                 self._append(project_id, tool_message)
                 messages.append(tool_message)
 

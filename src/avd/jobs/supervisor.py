@@ -131,7 +131,48 @@ def run_worker_loop(
     settings_loader: Callable[[Settings], Settings] = _load_settings,
     poll_interval: float = 0.25,
 ) -> None:
-    """Reload local configuration between attempts, never during an attempt."""
+    """Run ``lane_concurrency[lane]`` parallel slots, each reloading its configuration
+    between attempts (never during one). Jobs are claimed atomically, so slots never
+    share a job; each job still runs in its own isolated process."""
+    configured = (
+        settings_loader(base_settings) if settings_loader is _load_settings else base_settings
+    )
+    slots = max(1, int(configured.lane_concurrency.get(lane.value, 1)))
+
+    def slot() -> None:
+        _run_slot(
+            base_settings,
+            lane,
+            stop,
+            active_claim,
+            runtime_factory=runtime_factory,
+            settings_loader=settings_loader,
+            poll_interval=poll_interval,
+        )
+
+    if slots == 1:
+        slot()
+        return
+    threads = [
+        threading.Thread(target=slot, name=f"avd-{lane.value}-slot-{index}", daemon=True)
+        for index in range(slots)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+
+def _run_slot(
+    base_settings: Settings,
+    lane: JobLane,
+    stop: StopSignal,
+    active_claim: ActiveClaim,
+    *,
+    runtime_factory: Callable[[Settings], WorkerRuntime] | None,
+    settings_loader: Callable[[Settings], Settings],
+    poll_interval: float,
+) -> None:
     from avd.runtime import Runtime
 
     factory = runtime_factory or Runtime

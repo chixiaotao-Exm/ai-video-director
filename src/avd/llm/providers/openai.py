@@ -74,6 +74,7 @@ class OpenAIProvider:
         for message in converted:
             message.pop("provider_blocks", None)
             message.pop("event", None)
+            message.pop("attachments", None)
             message["content"] = _content(message.get("content", ""))
             if "tool_calls" in message:
                 message["tool_calls"] = [
