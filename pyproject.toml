@@ -30,6 +30,7 @@ llm = [
   "google-genai>=1",
 ]
 analysis = [
+  "numpy>=1.26",
   "demucs>=4",
   "faster-whisper>=1",
   "scenedetect[opencv]>=0.6",
@@ -75,5 +76,5 @@ module = ["avd.state.*", "avd.jobs.*", "avd.engine.*"]
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["anthropic.*", "openai.*", "google.*", "scenedetect.*", "faster_whisper.*"]
+module = ["anthropic.*", "openai.*", "google.*", "scenedetect.*", "faster_whisper.*", "numpy.*"]
 ignore_missing_imports = true
