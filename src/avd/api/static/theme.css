@@ -142,7 +142,7 @@ input:focus, textarea:focus, select:focus { background: #FFFFFF; border-color: v
 .content { max-width: 1880px; padding: var(--space-3) var(--space-4); }
 .project-chat-grid { grid-template-columns: minmax(0, 2.2fr) minmax(340px, 1fr); gap: var(--space-3); }
 .project-overview-grid { grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); }
-.wechat .chat-log { height: max(360px, calc(100vh - 300px)); }
+.wechat .chat-log { height: max(360px, calc(100vh - 340px)); }
 .project-page { gap: var(--space-2); }
 .project-page .page-heading h1 { font-size: 24px; }
 .panel h2 { font-size: 16px; }
