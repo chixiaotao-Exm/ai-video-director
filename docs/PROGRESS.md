@@ -74,3 +74,10 @@
 - Added shared Runtime and API-lane analysis/script handlers; executor start rechecks stale recipes, reviews, budget and consent. Asset replacement updates materialized recipes and dirties only relevant chains.
 - Tests: 245 passed, 3 skipped (two FFmpeg cases and Windows symlink capability), one upstream Starlette/httpx deprecation warning.
 - Deployment is a local single-user app; provider keys, workers and exported ComfyUI workflows are still required for real generation. No paid calls made.
+
+## T10 — minimal web workspace
+
+- Added a responsive three-column Chinese workspace: projects, source/asset uploads, explicit consent, assignment, chat, structure/script review, shot media/version selection/revert, final preview, budget and live jobs.
+- Packaged static files; documented full setup/workflow and supplied a small worker runner alongside uvicorn.
+- Verified local page layout in the in-app browser, static/API contracts, and JavaScript syntax.
+- Tests: 248 passed, 3 skipped; one upstream Starlette/httpx deprecation warning remains for T11 review.

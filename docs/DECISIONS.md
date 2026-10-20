@@ -85,3 +85,11 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Process-local notification queues or exposing the whole data directory; rejected for persistence and containment.
 - **Decision:** Test network guard permits only socketpair construction for Windows asyncio wakeup pipes; outbound service connections remain blocked.
 - **Alternatives:** Disable network blocking for API tests; rejected.
+
+## T10
+
+- **Date:** 2026-10-20
+- **Decision:** Serve one vanilla HTML/CSS/JS workspace from FastAPI with packaged static assets. No CDN, frontend build step or browser-stored secrets.
+- **Alternatives:** Separate frontend framework/build server; rejected for this minimal local UI.
+- **Decision:** Use SSE completion events plus a four-second status refresh to show both completion and queued/running progress. Human review/consent/budget inputs use explicit forms and are never auto-checked.
+- **Alternatives:** Only poll or automatically confirm; rejected for responsiveness and approval correctness.

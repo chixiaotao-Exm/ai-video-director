@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AI Video Director · 导演工作台</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="导演工作台首页"><span class="brand-mark">▶</span><span>AI VIDEO DIRECTOR<small>导演工作台</small></span></a>
+    <div class="topbar-end"><span id="connection" class="connection">正在连接…</span><button id="refresh" class="quiet" type="button">刷新</button></div>
+  </header>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <div id="error" class="notice error" role="alert" hidden></div>
+  <noscript><p class="notice error">请启用 JavaScript，才能使用导演工作台。</p></noscript>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="项目与素材">
+      <section class="panel">
+        <h2>项目</h2>
+        <label>当前项目<select id="project-select"><option value="">选择或新建项目</option></select></label>
+        <details id="new-project"><summary>＋ 新建项目</summary>
+          <form id="project-form" class="stack">
+            <label>项目名称<input name="title" required maxlength="255" placeholder="例如：春日旅行短片"></label>
+            <label>总预算上限（USD）<input name="budget_limit" type="number" min="0" step="0.01" value="10" required></label>
+            <button type="submit">创建项目</button>
+          </form>
+        </details>
+      </section>
+      <section class="panel">
+        <h2>参考视频 <span class="eyebrow">01 / 灵感</span></h2>
+        <p class="hint">提取结构与节奏，用你的角色与声音创作新内容。</p>
+        <form id="source-form" class="stack">
+          <label>上传样片<input name="file" type="file" accept=".mp4,.mov,.webm,.mkv,.avi" required></label>
+          <button type="submit" data-project>上传视频</button>
+        </form>
+        <div id="source-preview" class="source-preview"></div>
+      </section>
+      <section class="panel">
+        <h2>角色与声音 <span class="eyebrow">02 / 素材</span></h2>
+        <form id="assets-form" class="stack">
+          <label>角色<select id="character-select" name="character_id" required><option value="">选择角色</option></select></label>
+          <label>声音<select id="voice-select" name="voice_id" required><option value="">选择声音</option></select></label>
+          <button type="submit" data-project>用于当前项目</button>
+        </form>
+        <p id="attached-assets" class="hint">选择已授权的角色与声音。</p>
+        <details><summary>＋ 创建角色</summary>
+          <form id="character-form" class="stack">
+            <label>角色名称<input name="name" required maxlength="255"></label>
+            <label>固定外观描述<textarea name="appearance_prompt" rows="3" required placeholder="发型、服装、面部特征与整体风格"></textarea></label>
+            <div class="file-grid">
+              <label>正面（必填）<input name="front" type="file" accept="image/png,image/jpeg,image/webp" required></label>
+              <label>侧面<input name="side" type="file" accept="image/png,image/jpeg,image/webp"></label>
+              <label>半身<input name="half" type="file" accept="image/png,image/jpeg,image/webp"></label>
+              <label>全身<input name="full" type="file" accept="image/png,image/jpeg,image/webp"></label>
+            </div>
+            <button type="submit">保存角色</button>
+          </form>
+        </details>
+        <details><summary>＋ 创建声音</summary>
+          <form id="voice-form" class="stack">
+            <label>声音名称<input name="name" required maxlength="255"></label>
+            <label>干净的人声样本（建议 1–3 分钟）<input name="samples" type="file" accept=".wav,.mp3,.flac,.m4a" multiple required></label>
+            <label>声音引擎<input name="engine" value="comfyui" required maxlength="255"></label>
+            <label>引擎声音 ID（可选）<input name="engine_voice_id"></label>
+            <button type="submit">保存声音</button>
+          </form>
+        </details>
+        <details id="consent-panel"><summary>确认素材授权</summary>
+          <form id="consent-form" class="stack">
+            <label>待授权素材<select id="consent-select" required><option value="">选择素材</option></select></label>
+            <label>确认人<input name="confirmed_by" required maxlength="255" autocomplete="name" placeholder="填写你的姓名"></label>
+            <label class="check"><input name="confirmed" type="checkbox" required><span>我确认已获得该角色肖像或该声音的使用与克隆授权。</span></label>
+            <button type="submit">确认此素材授权</button>
+          </form>
+        </details>
+      </section>
+    </aside>
+    <main class="canvas">
+      <section class="project-heading">
+        <div><p class="eyebrow">创作空间</p><h1 id="project-title">开始你的下一部短片</h1><p id="project-subtitle" class="hint">新建项目，上传参考视频，再与导演一起完善作品。</p></div>
+        <div class="budget-summary" aria-label="项目预算"><span>已使用 / 总预算</span><strong id="budget-spent">—</strong><small id="budget-remaining">USD</small></div>
+      </section>
+      <section class="panel workflow-panel">
+        <div class="section-heading"><h2>创作流程</h2><span class="hint">每个检查点由你确认</span></div>
+        <label class="review-actor">审核人<input id="review-actor" required maxlength="255" autocomplete="name" placeholder="审批前填写姓名"></label>
+        <div id="checkpoints" class="checkpoints"></div>
+        <div class="tool-row">
+          <button type="button" id="analyze" data-project>分析样片</button>
+          <button type="button" id="frames" data-project>生成首帧</button>
+          <button type="button" id="rebuild" data-project>增量生成 / 继续</button>
+        </div>
+        <form id="script-form" class="brief-form">
+          <label>创作要求<textarea name="brief" rows="2" required placeholder="想讲什么故事？给谁看？希望呈现什么感觉？"></textarea></label>
+          <button type="submit" data-project>编写脚本</button>
+        </form>
+        <details><summary>本次批量生成的预算授权</summary>
+          <p class="hint">授权当前内容在总预算内的额外支出额度。内容发生变化后，可能需要重新授权。</p>
+          <form id="budget-form" class="budget-form">
+            <label>授权额度（USD）<input name="amount" type="number" min="0" step="0.01" required placeholder="0.00"></label>
+            <label>批准人<input name="approved_by" required maxlength="255" autocomplete="name"></label>
+            <button type="submit" data-project>确认预算授权</button>
+          </form>
+        </details>
+      </section>
+      <div class="review-panels">
+        <details class="panel" open><summary>结构模板 <span id="structure-status" class="badge">等待分析</span></summary><div id="analysis-content" class="review-content"><p class="empty">上传并分析样片后，在这里查看结构和节奏。</p></div></details>
+        <details class="panel" open><summary>脚本与分镜 <span id="script-status" class="badge">等待编写</span></summary><div id="script-content" class="review-content"><p class="empty">确认结构、关联素材并填写创作要求后，开始编写。</p></div></details>
+      </div>
+      <section class="shot-section" aria-labelledby="shots-title">
+        <div class="section-heading"><h2 id="shots-title">镜头工作区</h2><span id="shot-count" class="hint">0 个镜头</span></div>
+        <div id="shot-grid" class="shot-grid"><div class="empty empty-large">每个镜头的画面、视频和声音将在这里呈现。<br>你可以独立查看版本，或在聊天中提出修改。</div></div>
+      </section>
+      <section class="panel"><h2>成片</h2><div id="final-output"><p class="empty">首帧确认后，继续生成视频、配音、口型和字幕。</p></div></section>
+      <section class="panel"><div class="section-heading"><h2>任务进度</h2><span id="job-count" class="hint">暂无任务</span></div><div id="jobs" aria-live="polite"><p class="empty">生成任务会保存在项目中。</p></div></section>
+    </main>
+    <aside class="chat-panel panel" aria-label="导演对话">
+      <div class="chat-heading"><div><h2>与导演对话</h2><p class="hint">从一个想法，到每一处细节。</p></div><span class="chat-orb" aria-hidden="true">✳</span></div>
+      <div id="chat-history" class="chat-history" role="log" aria-live="polite"><p class="empty">选择项目后开始对话。聊天记录会自动保存。</p></div>
+      <form id="chat-form" class="chat-compose">
+        <label class="sr-only" for="chat-message">发给导演的消息</label>
+        <textarea id="chat-message" name="message" rows="4" required placeholder="例如：把第 2 个镜头的台词改得更自然一点…"></textarea>
+        <div class="compose-footer"><small>Ctrl / ⌘ + Enter 发送</small><button type="submit" data-project>发送</button></div>
+      </form>
+    </aside>
+  </div>
+</body>
+</html>

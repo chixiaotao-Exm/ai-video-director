@@ -17,6 +17,7 @@ import uuid
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -249,6 +250,12 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
     application = FastAPI(title="AI Video Director", lifespan=lifespan)
     application.state.runtime = runtime
     application.state.max_upload_bytes = runtime.settings.max_upload_bytes if runtime else None
+    static_dir = Path(__file__).with_name("static")
+    application.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @application.get("/", include_in_schema=False)
+    def workspace() -> FileResponse:
+        return FileResponse(static_dir / "index.html", media_type="text/html")
 
     def current_runtime() -> Runtime:
         value = application.state.runtime
