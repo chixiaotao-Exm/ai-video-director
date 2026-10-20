@@ -172,10 +172,12 @@ class RebuildEngine:
         project: Project | str,
         *,
         kinds: Iterable[NodeKind | str] | None = None,
+        node_ids: Iterable[str] | None = None,
         confirmed: bool = False,
     ) -> list[str]:
         project_id = project if isinstance(project, str) else project.id
         selected = {NodeKind(kind) for kind in kinds} if kinds is not None else set(JOB_TYPES)
+        selected_ids = set(node_ids) if node_ids is not None else None
         # Finished work must survive a budget, consent or template error during planning.
         self._reconcile(project_id)
         with self.session_factory() as session:
@@ -202,6 +204,7 @@ class RebuildEngine:
                     node.kind not in selected
                     or node.kind not in JOB_TYPES
                     or node.id in active_nodes
+                    or (selected_ids is not None and node.id not in selected_ids)
                 ):
                     continue
                 if any(parent.status != NodeStatus.CLEAN for parent in node.depends_on):
@@ -235,6 +238,7 @@ class RebuildEngine:
                     "context": self._context(current),
                     "estimated_cost": cost,
                     "selected_kinds": sorted(kind.value for kind in selected),
+                    "selected_node_ids": sorted(selected_ids) if selected_ids is not None else None,
                     "confirmed": confirmed,
                 }
                 model_key = (
@@ -435,9 +439,10 @@ class RebuildEngine:
                 return
             self._publish(session, saved)
             selected = saved.payload.get("selected_kinds")
+            selected_ids = saved.payload.get("selected_node_ids")
             confirmed = bool(saved.payload.get("confirmed", False))
             session.commit()
-        self.rebuild(job.project_id, kinds=selected, confirmed=confirmed)
+        self.rebuild(job.project_id, kinds=selected, node_ids=selected_ids, confirmed=confirmed)
 
 
 def rebuild(project: Project | str, *, engine: RebuildEngine, **kwargs: Any) -> list[str]:

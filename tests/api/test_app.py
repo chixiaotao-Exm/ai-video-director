@@ -33,7 +33,7 @@ def api(tmp_path: Path):
     )
     app = create_app(runtime=runtime)
     try:
-        with TestClient(app) as client:
+        with TestClient(app, base_url="http://127.0.0.1") as client:
             yield client, runtime, provider
     finally:
         runtime.close()
@@ -110,12 +110,12 @@ def test_chat_uses_fake_provider_and_persists_across_app_instances(api):
     assert response.status_code == 200, response.text
     assert response.json()["reply"] == "Ready when you are."
     assert provider.calls
-    with TestClient(create_app(runtime=runtime)) as restarted:
+    with TestClient(create_app(runtime=runtime), base_url="http://127.0.0.1") as restarted:
         history = restarted.get(f"/projects/{project_id}/chat").json()
     assert any(item["role"] == "user" and item["content"] == "Hello" for item in history)
     assert any(item["role"] == "assistant" for item in history)
     status = client.get(f"/projects/{project_id}/status").json()
-    assert status["budget"] == {"limit": 10, "spent": 0, "remaining": 10}
+    assert status["budget"] == {"limit": 10, "spent": 0, "reserved": 0, "remaining": 10}
     tool = client.post(f"/projects/{project_id}/tools/get_budget", json={"args": {}})
     assert tool.status_code == 200 and isinstance(tool.json()["result"], str)
 
@@ -161,7 +161,7 @@ def test_jobs_and_events_read_persisted_terminal_state(api):
     queued_id = runtime.queue.submit(JobLane.CPU, "fake", {}, project_id=project["id"])
     foreign_id = runtime.queue.submit(JobLane.CPU, "fake", {}, project_id=other["id"])
     assert runtime.queue.cancel(foreign_id)
-    with TestClient(create_app(runtime=runtime)) as restarted:
+    with TestClient(create_app(runtime=runtime), base_url="http://127.0.0.1") as restarted:
         jobs = restarted.get(f"/projects/{project['id']}/jobs").json()
         assert {job["id"] for job in jobs} == {completed_id, queued_id}
         response = restarted.get(f"/projects/{project['id']}/events?once=true")

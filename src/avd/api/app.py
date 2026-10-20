@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -25,6 +26,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from avd.api.security import LocalOnlyMiddleware
+from avd.api.settings_api import install_settings_routes
+from avd.api.workspace import install_workspace_routes, redact_public
 from avd.assets.library import AssetLibrary
 from avd.assets.storage import AssetStorage
 from avd.config import Settings
@@ -318,6 +322,7 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
                 application.state.runtime = None
 
     application = FastAPI(title="AI Video Director", lifespan=lifespan)
+    application.add_middleware(LocalOnlyMiddleware)
     application.state.runtime = runtime
     application.state.max_upload_bytes = runtime.settings.max_upload_bytes if runtime else None
     static_dir = Path(__file__).with_name("static")
@@ -407,6 +412,40 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
     def media_root() -> Path:
         return current_runtime().settings.data_dir.expanduser().resolve()
 
+    def public(value: Any) -> Any:
+        active = application.state.runtime
+        return redact_public(value, active.settings) if active is not None else value
+
+    def refresh_settings(updated: Settings) -> None:
+        from avd.llm import BudgetGuard
+
+        active = current_runtime()
+        active.settings = updated
+        active.engine.settings = updated
+        active.engine.budget_guard = BudgetGuard(updated.confirm_threshold)
+        application.state.max_upload_bytes = updated.max_upload_bytes
+        configure_logging(updated.log_format, updated.log_level)
+
+    install_settings_routes(application, current_runtime, refresh_settings)
+    install_workspace_routes(application, current_runtime)
+
+    @application.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, error: RequestValidationError) -> JSONResponse:
+        # Pydantic's raw input/context can contain write-only keys from a settings form.
+        errors = [
+            {"loc": item["loc"], "msg": item["msg"], "type": item["type"]}
+            for item in error.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": public(errors)})
+
+    @application.exception_handler(HTTPException)
+    async def http_error(request: Request, error: HTTPException) -> JSONResponse:
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"detail": public(error.detail)},
+            headers=error.headers,
+        )
+
     def library(session: Session) -> AssetLibrary:
         return AssetLibrary(session, AssetStorage(media_root()))
 
@@ -416,26 +455,31 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
 
     @application.exception_handler(PermissionError)
     async def permission_error(request: Request, error: PermissionError) -> JSONResponse:
-        return JSONResponse(status_code=403, content={"detail": str(error)})
+        return JSONResponse(status_code=403, content={"detail": public(str(error))})
 
     @application.exception_handler(ValueError)
     async def value_error(request: Request, error: ValueError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": str(error)})
+        return JSONResponse(status_code=422, content={"detail": public(str(error))})
 
     @application.exception_handler(LookupError)
     async def lookup_error(request: Request, error: LookupError) -> JSONResponse:
-        return JSONResponse(status_code=404, content={"detail": str(error)})
+        return JSONResponse(status_code=404, content={"detail": public(str(error))})
 
     @application.exception_handler(BudgetExceeded)
     @application.exception_handler(ConfirmationRequired)
     @application.exception_handler(ReviewRequired)
     async def budget_error(request: Request, error: RuntimeError) -> JSONResponse:
-        return JSONResponse(status_code=409, content={"detail": str(error)})
+        return JSONResponse(status_code=409, content={"detail": public(str(error))})
 
     @application.post("/projects", status_code=201)
     def create_project(body: ProjectInput) -> dict[str, Any]:
         with current_runtime().session_factory() as session:
-            project = Project(title=body.title, budget_limit=body.budget_limit)
+            budget = (
+                body.budget_limit
+                if "budget_limit" in body.model_fields_set
+                else current_runtime().settings.default_budget_limit
+            )
+            project = Project(title=body.title, budget_limit=budget)
             session.add(project)
             session.commit()
             return _project_data(project)
@@ -599,11 +643,13 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
             result = _project_data(project)
             result["nodes"] = [_node_data(node) for node in project.nodes]
             result["reviews"] = review_status(session, project)
+            reserved = current_runtime()._reserved(session, project.id)
             result["budget"] = {
                 "limit": project.budget_limit,
                 "spent": project.spent,
+                "reserved": reserved,
                 "remaining": (
-                    project.budget_limit - project.spent
+                    project.budget_limit - project.spent - reserved
                     if project.budget_limit is not None
                     else None
                 ),
@@ -627,7 +673,10 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
     @application.get("/projects/{project_id}/jobs")
     def jobs(project_id: str) -> list[dict[str, Any]]:
         ensure_project(project_id)
-        return [_job_data(job) for job in current_runtime().queue.list(project_id=project_id)]
+        return cast(
+            list[dict[str, Any]],
+            public([_job_data(job) for job in current_runtime().queue.list(project_id=project_id)]),
+        )
 
     @application.post("/projects/{project_id}/approve")
     def approve_project(project_id: str, body: ApprovalInput) -> dict[str, Any]:
@@ -678,7 +727,9 @@ def create_app(settings: Settings | None = None, *, runtime: Runtime | None = No
                     if event_id in seen:
                         continue
                     seen.add(event_id)
-                    payload = json.dumps(jsonable_encoder(_job_data(job)), ensure_ascii=False)
+                    payload = json.dumps(
+                        jsonable_encoder(public(_job_data(job))), ensure_ascii=False
+                    )
                     yield f"id: {event_id}\nevent: job_finished\ndata: {payload}\n\n"
                 if once or await request.is_disconnected():
                     break

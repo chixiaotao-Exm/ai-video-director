@@ -80,3 +80,7 @@ The model research separates code/weight/auxiliary licenses, published memory ev
 | T16 | Contextual structured logs, database health/JSON metrics, spawned deadlines, bounded shutdown, retry exhaustion, process-tree cleanup/quarantine and concurrency regression tests. |
 
 All implementation checks are offline. Real API access, rented GPU installation, Docker image execution, actual exported ComfyUI graphs and model fidelity remain external validation, not passing offline-test claims.
+
+## T17a browser API audit
+
+Added regression coverage for settings precedence/atomic failure/secret masking (including malformed inputs), loopback Host and cross-origin denial, all workspace read/actions, budget floors and reservations, retry consent/review/stale-recipe checks, scoped regeneration and safe thumbnails/log redaction. Connection probes are explicit user actions only; model probes use the normal project ledger. T17's requested local settings file intentionally supersedes the older env-only storage convention. Browser UI and managed worker integration remain the following T17 commits.

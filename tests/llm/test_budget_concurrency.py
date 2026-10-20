@@ -267,7 +267,7 @@ def test_api_reports_busy_project_as_conflict(runtime: Runtime) -> None:
     identifier = project_id(runtime)
     with runtime.session_factory() as session:
         acquire_project_budget(session.get(Project, identifier))
-        with TestClient(create_app(runtime=runtime)) as client:
+        with TestClient(create_app(runtime=runtime), base_url="http://127.0.0.1") as client:
             response = client.post(f"/projects/{identifier}/tools/analyze_video", json={"args": {}})
         assert response.status_code == 409
         assert "try again" in response.json()["detail"]

@@ -2,24 +2,47 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field, PrivateAttr, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+
+def _http_base_url(value: str) -> str:
+    value = value.strip().rstrip("/")
+    try:
+        parsed = urlsplit(value)
+        valid = (
+            parsed.scheme in {"http", "https"}
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+            and not any(char.isspace() for char in value)
+        )
+        parsed.port
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(
+            "Service URLs must be HTTP(S) addresses without credentials, query or fragment"
+        )
+    return value
 
 
 class ComfyUIProfile(BaseModel):
     """Connection details for a named local or remote ComfyUI server."""
 
     base_url: str = "http://127.0.0.1:8188"
-    timeout: float = Field(default=600.0, gt=0)
+    timeout: float = Field(default=600.0, gt=0, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def validate_base_url(self) -> Self:
-        self.base_url = self.base_url.strip().rstrip("/")
-        if not self.base_url.startswith(("http://", "https://")):
-            raise ValueError("ComfyUI profile base_url must use http:// or https://")
+        self.base_url = _http_base_url(self.base_url)
         return self
 
 
@@ -45,7 +68,9 @@ class ModelPrice(BaseModel):
 
 
 class Settings(BaseSettings):
-    """Configuration loaded from constructor values or ``AVD_`` variables."""
+    """Configuration: explicit values > local settings file > ``AVD_`` variables."""
+
+    _explicit_overrides: dict[str, Any] = PrivateAttr(default_factory=dict)
 
     data_dir: Path = Path("./data")
     database_url: str | None = None
@@ -65,9 +90,12 @@ class Settings(BaseSettings):
     llm_routes: dict[str, LLMRoute] = Field(default_factory=dict)
     model_prices: dict[str, ModelPrice] = Field(default_factory=dict)
     confirm_threshold: float = Field(default=1.0, ge=0, allow_inf_nan=False)
+    default_budget_limit: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)
     whisper_model: str = "small"
     workflow_dir: Path | None = None
-    job_estimated_costs: dict[str, float] = Field(default_factory=dict)
+    job_estimated_costs: dict[str, Annotated[float, Field(ge=0, allow_inf_nan=False)]] = Field(
+        default_factory=dict
+    )
     llm_max_output_tokens: int = Field(default=4096, gt=0)
     max_upload_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
     log_format: Literal["text", "json"] = "text"
@@ -88,7 +116,43 @@ class Settings(BaseSettings):
         env_file=".env",
         env_nested_delimiter="__",
         extra="ignore",
+        hide_input_in_errors=True,
     )
+
+    def __init__(self, **values: Any) -> None:
+        super().__init__(**values)
+        self._explicit_overrides = deepcopy(values)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        from avd.settings_store import ReplacementSettingsSource, SettingsFileSource
+
+        return (
+            init_settings,
+            ReplacementSettingsSource(
+                SettingsFileSource(settings_cls, init_settings, env_settings, dotenv_settings)
+            ),
+            ReplacementSettingsSource(env_settings),
+            ReplacementSettingsSource(dotenv_settings),
+            ReplacementSettingsSource(file_secret_settings),
+        )
+
+    @property
+    def explicit_overrides(self) -> dict[str, Any]:
+        """Preserve constructor precedence when another process reloads the file."""
+        return deepcopy(self._explicit_overrides)
+
+    @field_validator("anthropic_base_url", "openai_base_url", "gemini_base_url", "comfyui_url")
+    @classmethod
+    def validate_service_url(cls, value: str | None) -> str | None:
+        return _http_base_url(value) if value else None
 
     @model_validator(mode="after")
     def derive_database_url(self) -> Settings:

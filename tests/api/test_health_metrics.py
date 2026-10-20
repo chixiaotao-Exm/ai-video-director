@@ -34,7 +34,7 @@ def test_health_and_metrics_report_persisted_state_without_running_work(tmp_path
         runtime.queue.claim_next("cpu")
         cancelled = runtime.queue.submit("cpu", "final", {})
         runtime.queue.cancel(cancelled)
-        with TestClient(create_app(runtime=runtime)) as client:
+        with TestClient(create_app(runtime=runtime), base_url="http://127.0.0.1") as client:
             healthy = client.get("/health")
             assert healthy.status_code == 200 and healthy.json() == {
                 "status": "ok",
@@ -62,7 +62,7 @@ def test_unavailable_database_returns_503_without_connection_details(
         raise RuntimeError("secret database connection details")
 
     try:
-        with TestClient(create_app(runtime=runtime)) as client:
+        with TestClient(create_app(runtime=runtime), base_url="http://127.0.0.1") as client:
             monkeypatch.setattr(runtime, "session_factory", unavailable)
             for route in ("/health", "/metrics"):
                 response = client.get(route)
@@ -75,7 +75,7 @@ def test_unavailable_database_returns_503_without_connection_details(
 def test_api_log_contains_project_id_without_chat_body(tmp_path: Path, capsys) -> None:
     runtime = Runtime(Settings(_env_file=None, data_dir=tmp_path, log_format="json"))
     try:
-        with TestClient(create_app(runtime=runtime)) as client:
+        with TestClient(create_app(runtime=runtime), base_url="http://127.0.0.1") as client:
             project = client.post("/projects", json={"title": "Logging"}).json()
             capsys.readouterr()
             response = client.get(f"/projects/{project['id']}/status")

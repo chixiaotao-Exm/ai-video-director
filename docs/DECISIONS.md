@@ -153,3 +153,17 @@ This file records implementation choices made while completing the milestone pla
 - **Alternatives:** Automatically expire an uncertain live process; rejected because that can violate GPU serialization. Accepted remote requests may still run or bill after local cancellation, so exactly-once remote execution is not claimed.
 - **Decision:** All budget decisions and accounting share a nonblocking per-database/project OS lock until the outer transaction commits or rolls back. Concurrent conflicts fail visibly instead of waiting while holding SQLite write locks. Pending unledgered executor attempts stay reserved through completion/retry gaps.
 - **Alternatives:** Refresh spend without mutual exclusion, or hold SQLite write locks across network calls; rejected because the first races and the second blocks queue heartbeats. A separate distributed reservation service is beyond the single-host SQLite deployment.
+
+## T17a — settings and browser API
+
+- **Date:** 2026-10-20
+- **Decision:** Follow T17's explicit browser-settings requirement: store editable settings, including replaced keys, in local gitignored data/settings.json. This supersedes the older env-only convention for this task. Precedence is environment/.env < settings file < explicit constructor/CLI overrides; a dictionary field replaces the lower-priority dictionary completely, including an empty object. Atomic replacement preserves the previous file on validation/write failure. Data/database paths are read-only from the browser.
+- **Alternatives:** Rewrite .env or return stored keys to form fields; rejected because local application settings and write-only credentials are explicitly requested. Responses expose only a masked suffix; validation/diagnostic errors omit secret inputs.
+- **Decision:** All HTTP routes enforce loopback Host and same-origin mutations. IPv6 ::1 is treated as loopback; absent Origin remains valid for local CLI clients, while foreign/null Origin and explicit cross-site requests are rejected.
+- **Alternatives:** Protect settings alone or disable checks for a test hostname; rejected because uploads/media and other state-changing operations need the same boundary. Tests use a real loopback base URL.
+- **Decision:** Connection checks occur only after an explicit button/API action. Paid provider checks use a tiny eight-token request and require a selected project so normal budget and ledger rules apply. Dashboard shows the last check or unverified, never background paid probes.
+- **Alternatives:** Untracked free-standing test calls or automatic service probing; rejected because model calls must be budgeted and user-triggered.
+- **Decision:** Shot regeneration changes only the requested node's generation nonce and scopes scheduling to its dependent chain. Human reviews and budget approvals are rechecked; any newly required review is returned to the UI. Existing versions remain immutable and unrelated dirty shots are not queued.
+- **Alternatives:** Rebuild the entire project or auto-approve after regeneration; rejected for incremental behavior and review integrity.
+- **Decision:** Restrict pytest discovery to tests/ so ignored generated data and draft artifacts cannot become test modules.
+- **Alternatives:** Rely on filename conventions under data/; rejected because data is not source-controlled test input.

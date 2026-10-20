@@ -289,7 +289,7 @@ def run_demo(
     run_dir.mkdir(parents=True)
     database_path = run_dir / "state.db"
     settings = Settings(
-        _env_file=None,  # type: ignore[call-arg]
+        _env_file=None,
         data_dir=root,
         database_url=f"sqlite:///{database_path.as_posix()}",
         workflow_dir=DEFAULT_WORKFLOWS_DIR,

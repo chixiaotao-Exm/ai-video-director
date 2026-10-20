@@ -39,7 +39,7 @@ class PageParser(HTMLParser):
 def client():
     # Static resources and OpenAPI must not require starting paid providers,
     # opening a database, or constructing the optional analysis runtime.
-    return TestClient(create_app())
+    return TestClient(create_app(), base_url="http://127.0.0.1")
 
 
 def test_workspace_and_local_static_resources_are_served(client: TestClient) -> None:
