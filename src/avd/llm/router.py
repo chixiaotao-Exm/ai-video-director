@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from functools import partial
 from typing import Any, TypeVar
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
@@ -40,6 +41,20 @@ class StructuredOutputError(ValueError):
     """A provider returned invalid data both initially and after one repair."""
 
 
+def gemini_uses_openai_compat(base_url: str | None) -> bool:
+    """True when a Gemini base URL is an OpenAI-compatible relay, not the native API.
+
+    Relays are commonly entered as ``https://host/v1`` or Google's own
+    ``.../v1beta/openai`` endpoint. The native SDK talks to ``generateContent``
+    and answers those addresses with 404.
+    """
+
+    if not base_url:
+        return False
+    path = urlsplit(base_url).path.rstrip("/").lower()
+    return path.endswith("/v1") or path.endswith("/openai")
+
+
 class LLMRouter:
     def __init__(
         self,
@@ -50,6 +65,8 @@ class LLMRouter:
         project: Project | None = None,
         budget_guard: BudgetGuard | None = None,
         confirmation_check: Callable[[Project, float], bool] | None = None,
+        route_overrides: Mapping[str, LLMRoute] | None = None,
+        request_observer: Callable[[str, LLMRoute], None] | None = None,
     ) -> None:
         self.settings = settings or Settings()
         self.providers: dict[str, Provider] = dict(providers or {})
@@ -57,9 +74,11 @@ class LLMRouter:
         self.project = project
         self.budget_guard = budget_guard or BudgetGuard(self.settings.confirm_threshold)
         self.confirmation_check = confirmation_check
+        self.route_overrides = dict(route_overrides or {})
+        self.request_observer = request_observer
 
     def route(self, role: str) -> LLMRoute:
-        route = self.settings.llm_route(role)
+        route = self.route_overrides.get(role) or self.settings.llm_route(role)
         if not route.model or not route.model.strip():
             setting = "AVD_GEMINI_MODEL" if route.provider == "gemini" else "AVD_LLM_ROUTES"
             raise ProviderConfigurationError(
@@ -74,9 +93,12 @@ class LLMRouter:
                 "openai": OpenAIProvider,
                 "gemini": GeminiProvider,
             }
-            if name == "deepseek":
-                # DeepSeek exposes an OpenAI-compatible Chat Completions API.
-                types["deepseek"] = partial(OpenAIProvider, label="DeepSeek")
+            # DeepSeek and xAI Grok both expose an OpenAI-compatible Chat Completions API.
+            compatible = {"deepseek": "DeepSeek", "grok": "Grok"}
+            if name in compatible:
+                types[name] = partial(OpenAIProvider, label=compatible[name])
+            if name == "gemini" and gemini_uses_openai_compat(self.settings.gemini_base_url):
+                types["gemini"] = partial(OpenAIProvider, label="Gemini")
             if name not in types:
                 raise ProviderConfigurationError(f"Unknown LLM provider: {name!r}")
             key = getattr(self.settings, f"{name}_api_key")
@@ -104,6 +126,8 @@ class LLMRouter:
             route, provider, current_project, messages, tools, estimated_cost, confirmed
         )
         assert route.model is not None
+        if self.request_observer is not None:
+            self.request_observer(role, route)
         try:
             response = provider.chat(route.model, deepcopy(messages), deepcopy(tools))
         except ProviderResponseError as exc:
@@ -188,6 +212,8 @@ class LLMRouter:
             confirmed,
         )
         assert route.model is not None
+        if self.request_observer is not None:
+            self.request_observer("web_search", route)
         try:
             response: ChatResponse = search(route.model, query)
         except ProviderResponseError as exc:
@@ -235,4 +261,4 @@ class LLMRouter:
         raise AssertionError("unreachable")
 
 
-__all__ = ["LLMRouter", "StructuredOutputError"]
+__all__ = ["LLMRouter", "StructuredOutputError", "gemini_uses_openai_compat"]

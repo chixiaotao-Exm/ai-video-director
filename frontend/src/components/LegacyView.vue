@@ -25,7 +25,7 @@ onMounted(async () => {
     }
   };
   try {
-    const name = {projects:'project', assets:'assets', jobs:'jobs', costs:'costs', settings:'settings', system:'system'}[props.page];
+    const name = {projects:'project', performance:'performance', assets:'assets', jobs:'jobs', costs:'costs', settings:'settings', system:'system'}[props.page];
     if(!name) throw new Error('没有找到这个页面');
     const module = await import(/* @vite-ignore */ `/static/pages/${name}.js`);
     const element = await module.render(ctx);

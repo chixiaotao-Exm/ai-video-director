@@ -59,6 +59,15 @@ class NodeKind(str, Enum):
     LIPSYNC = "lipsync"
     SUBTITLES = "subtitles"
     FINAL = "final"
+    PERFORMANCE_PREPARE = "performance_prepare"
+    VOCAL_SEPARATION = "vocal_separation"
+    SCENE_REFERENCE = "scene_reference"
+    SINGING_VOICE = "singing_voice"
+    MOTION_VIDEO = "motion_video"
+    PERFORMANCE_MIX = "performance_mix"
+    PERFORMANCE_SYNC = "performance_sync"
+    PERFORMANCE_LIPSYNC = "performance_lipsync"
+    PERFORMANCE_FINAL = "performance_final"
 
 
 class NodeStatus(str, Enum):
@@ -169,6 +178,7 @@ class Project(Base):
     mode: Mapped[str] = mapped_column(String(32), nullable=False, default="remake")
     source_video_path: Mapped[str | None] = mapped_column(String, nullable=True)
     analysis_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    performance_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     character_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("characters.id", ondelete="SET NULL"), nullable=True
     )
@@ -326,6 +336,12 @@ def _validate_voice_paths(mapper: Any, connection: Any, target: Voice) -> None:
 def _validate_source_path(mapper: Any, connection: Any, target: Project) -> None:
     if target.source_video_path is not None:
         target.source_video_path = relative_path(target.source_video_path)
+    if target.performance_config is not None:
+        from avd.performance.models import PerformanceConfig
+
+        target.performance_config = PerformanceConfig.model_validate(
+            target.performance_config
+        ).model_dump(mode="json")
 
 
 @event.listens_for(Version, "before_insert")

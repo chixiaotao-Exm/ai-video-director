@@ -114,7 +114,11 @@ def upgrade_sqlite_schema(engine: Engine) -> None:
             "consent_confirmed_at": "DATETIME",
         },
         "jobs": {"claim_token": "VARCHAR(36)", "lease_expires_at": "DATETIME"},
-        "projects": {"mode": "VARCHAR(32) NOT NULL DEFAULT 'remake'"},
+        "projects": {
+            "mode": "VARCHAR(32) NOT NULL DEFAULT 'remake'",
+            "performance_config": "JSON",
+        },
+        "subagents": {"pending_report": "TEXT"},
         "cost_entries": {
             "job_id": "VARCHAR(36) REFERENCES jobs(id) ON DELETE SET NULL",
             "attempt": "INTEGER",

@@ -114,6 +114,8 @@ def build_registry(
     image_backend: ImageBackend | None = None,
     comfyui_client: ComfyBackend | None = None,
     before_paid: Callable[[Job], None] | None = None,
+    image_request_observer: Callable[[Job, str, str], None] | None = None,
+    performance_backend: Any = None,
 ) -> HandlerRegistry:
     """Create six handlers; external clients can be replaced with offline fakes.
 
@@ -146,11 +148,16 @@ def build_registry(
         execution.prepare()
         if before_paid is not None:
             before_paid(job)
+        provider, default_model = settings.image_route()
         output = images.generate(
             prompt=prompt,
             reference_images=references,
             output_path=execution.output_dir / "image.png",
-            model=str(execution.settings.get("image_model", settings.image_model)),
+            model=str(execution.settings.get("image_model", default_model)),
+            provider=str(execution.settings.get("image_provider", provider)),
+            request_observer=(lambda chosen, model: image_request_observer(job, chosen, model))
+            if image_request_observer is not None
+            else None,
         )
         return execution.result({"image": output})
 
@@ -274,6 +281,11 @@ def build_registry(
         registry.register(job_type, comfy)
     registry.register("subtitles", subtitles)
     registry.register("final", final)
+    from avd.performance.executors import install_performance_handlers
+
+    install_performance_handlers(
+        registry, settings, backend=performance_backend, before_paid=before_paid
+    )
     return registry
 
 

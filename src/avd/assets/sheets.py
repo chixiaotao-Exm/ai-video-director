@@ -15,6 +15,7 @@ from avd.director.review import budget_is_confirmed
 from avd.jobs import Job
 from avd.jobs.queue import ClaimLostError
 from avd.llm.budget import BudgetExceeded, BudgetGuard
+from avd.llm.images import resolve_still_image
 from avd.state.models import Project
 from avd.state.paths import relative_path
 
@@ -26,7 +27,13 @@ if TYPE_CHECKING:
 
 
 def submit_character_sheet(
-    runtime: Runtime, project_id: str, name: str, appearance_prompt: str
+    runtime: Runtime,
+    project_id: str,
+    name: str,
+    appearance_prompt: str,
+    *,
+    image_provider: str | None = None,
+    image_model: str | None = None,
 ) -> str:
     """Submit a fictional character described in text, without reference media."""
     name = name.strip()
@@ -55,6 +62,7 @@ def submit_character_sheet(
             raise BudgetExceeded(
                 "Pending work plus this character sheet exceeds the project budget"
             )
+        provider, model = resolve_still_image(runtime.settings, image_provider, image_model)
         output_dir = (
             f"projects/{project_id}/character-sheet-{uuid.uuid4().hex}/1-{uuid.uuid4().hex}"
         )
@@ -69,7 +77,7 @@ def submit_character_sheet(
                 "recipe": {
                     "character_sheet": True,
                     "appearance_prompt": appearance_prompt,
-                    "_execution": {"image_model": runtime.settings.image_model},
+                    "_execution": {"image_provider": provider, "image_model": model},
                 },
                 "context": {},
                 "inputs": {},
@@ -77,7 +85,7 @@ def submit_character_sheet(
             },
             project_id=project_id,
             node_id=None,
-            model_key=runtime.settings.image_model,
+            model_key=model,
             session=session,
         )
         session.commit()

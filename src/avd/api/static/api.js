@@ -17,6 +17,40 @@ export const API_ROUTES = Object.freeze({
   regenerate: '/projects/{project_id}/shots/{shot_index}/regenerate', health: '/health', metrics: '/metrics'
 });
 
+function responseError(status, detail, code = 'http_error') {
+  const error = new Error(`${t('error.http', {status})} ${detail}`);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
+function safeErrorText(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (/<[a-z!/][^>]*>/i.test(text)) return '';
+  return text.length > 600 ? `${text.slice(0, 599)}…` : text;
+}
+
+function responseFailure(status) {
+  if (status === 429) return t('error.rateLimited');
+  if (status >= 500) return t('error.serverFailure');
+  return t('error.failed');
+}
+
+function errorDetail(data, status) {
+  const detail = data?.detail;
+  if (Array.isArray(detail)) {
+    const messages = detail.map(item => {
+      const message = safeErrorText(item?.msg);
+      const location = Array.isArray(item?.loc) ? item.loc.filter(part => typeof part === 'string' || typeof part === 'number').join('.') : '';
+      return message ? `${location ? `${location}: ` : ''}${message}` : '';
+    }).filter(Boolean);
+    return safeErrorText(messages.join('\n')) || responseFailure(status);
+  }
+  if (detail && typeof detail === 'object') return safeErrorText(detail.summary) || safeErrorText(detail.message) || responseFailure(status);
+  return safeErrorText(detail) || responseFailure(status);
+}
+
 export async function api(path, {method = 'GET', body, signal, query} = {}) {
   if (!path.startsWith('/') || path.startsWith('//')) throw new Error(t('error.localOnly'));
   if (query) {
@@ -33,19 +67,23 @@ export async function api(path, {method = 'GET', body, signal, query} = {}) {
   try { response = await fetch(path, options); }
   catch (error) {
     if (error.name === 'AbortError') throw error;
-    throw new Error(t('error.connection'));
+    const connectionError = new Error(t('error.connection'));
+    connectionError.code = 'network_error';
+    throw connectionError;
   }
-  const text = await response.text();
+  let text;
+  try { text = await response.text(); }
+  catch (error) {
+    if (error.name === 'AbortError') throw error;
+    throw responseError(response.status, t('error.incompleteResponse'), 'incomplete_response');
+  }
   let data;
   try { data = text ? JSON.parse(text) : null; }
-  catch { throw new Error(t('error.invalidResponse')); }
+  catch {
+    throw responseError(response.status, response.ok ? t('error.invalidResponse') : responseFailure(response.status), 'invalid_response');
+  }
   if (!response.ok) {
-    let detail = data?.detail || t('error.failed');
-    if (Array.isArray(detail)) detail = detail.map(item => `${item.loc?.join('.')}: ${item.msg}`).join('\n');
-    else if (typeof detail === 'object') detail = detail.summary || JSON.stringify(detail);
-    const error = new Error(`${t('error.http', {status: response.status})} ${detail}`);
-    error.status = response.status;
-    throw error;
+    throw responseError(response.status, errorDetail(data, response.status), safeErrorText(data?.detail?.code) || 'http_error');
   }
   return data;
 }

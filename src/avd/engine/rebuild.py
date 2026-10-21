@@ -19,6 +19,8 @@ from avd.config import Settings
 from avd.jobs import Job, JobQueue, JobStatus
 from avd.llm import BudgetExceeded, BudgetGuard, CostLedger
 from avd.llm.reservations import reserved_cost
+from avd.performance.seed_vc import seed_installation_snapshot
+from avd.performance.voice import rvc_installation_snapshot
 from avd.state.consent import require_usable
 from avd.state.models import Node, NodeKind, NodeStatus, Project, Version
 from avd.state.repo import ProjectRepo
@@ -30,6 +32,15 @@ JOB_TYPES: dict[NodeKind, tuple[str, str]] = {
     NodeKind.LIPSYNC: ("gpu", "lipsync"),
     NodeKind.SUBTITLES: ("cpu", "subtitles"),
     NodeKind.FINAL: ("cpu", "final"),
+    NodeKind.PERFORMANCE_PREPARE: ("cpu", "performance_prepare"),
+    NodeKind.VOCAL_SEPARATION: ("gpu", "vocal_separation"),
+    NodeKind.SCENE_REFERENCE: ("api", "scene_reference"),
+    NodeKind.SINGING_VOICE: ("gpu", "singing_voice"),
+    NodeKind.MOTION_VIDEO: ("gpu", "motion_video"),
+    NodeKind.PERFORMANCE_MIX: ("cpu", "performance_mix"),
+    NodeKind.PERFORMANCE_SYNC: ("cpu", "performance_sync"),
+    NodeKind.PERFORMANCE_LIPSYNC: ("gpu", "performance_lipsync"),
+    NodeKind.PERFORMANCE_FINAL: ("cpu", "performance_final"),
 }
 
 
@@ -71,11 +82,22 @@ class RebuildEngine:
 
     @staticmethod
     def _consent(project: Project, node: Node) -> None:
-        if node.kind in {NodeKind.SHOT_FRAME, NodeKind.LIPSYNC}:
+        if node.kind in {
+            NodeKind.SHOT_FRAME,
+            NodeKind.LIPSYNC,
+            NodeKind.SCENE_REFERENCE,
+            NodeKind.MOTION_VIDEO,
+            NodeKind.PERFORMANCE_LIPSYNC,
+        }:
             if project.character is None:
                 raise ValueError("Project needs a consented character")
             require_usable(project.character)
-        if node.kind in {NodeKind.VOICEOVER, NodeKind.LIPSYNC}:
+        if node.kind in {
+            NodeKind.VOICEOVER,
+            NodeKind.LIPSYNC,
+            NodeKind.SINGING_VOICE,
+            NodeKind.PERFORMANCE_LIPSYNC,
+        }:
             if project.voice is None:
                 raise ValueError("Project needs a consented voice")
             require_usable(project.voice)
@@ -94,8 +116,9 @@ class RebuildEngine:
         }
 
     def _execution_settings(self, node: Node) -> dict[str, Any]:
-        if node.kind == NodeKind.SHOT_FRAME:
-            return {"image_model": self.settings.image_model}
+        if node.kind in {NodeKind.SHOT_FRAME, NodeKind.SCENE_REFERENCE}:
+            provider, model = self.settings.image_route()
+            return {"image_provider": provider, "image_model": model}
         if node.kind in {NodeKind.SHOT_VIDEO, NodeKind.VOICEOVER, NodeKind.LIPSYNC}:
             name = JOB_TYPES[node.kind][1]
             directory = self.settings.workflow_dir or DEFAULT_WORKFLOWS_DIR
@@ -107,6 +130,16 @@ class RebuildEngine:
                 "workflow_template": template,
                 "comfyui_profile": self.settings.comfyui_profile.model_dump(mode="json"),
             }
+        if node.kind == NodeKind.SINGING_VOICE:
+            if (node.recipe or {}).get("voice_engine") == "seed-vc":
+                return {
+                    "seed_vc_runtime": seed_installation_snapshot(
+                        self.settings.seed_vc_installation
+                    )
+                }
+            return {"rvc_runtime": rvc_installation_snapshot(self.settings.rvc_installation)}
+        if node.kind == NodeKind.PERFORMANCE_FINAL:
+            return {"ai_label": True}
         return {}
 
     def _effective_recipe(
@@ -132,6 +165,7 @@ class RebuildEngine:
                 continue
             version = dependency.current_version
             inputs[dependency.id] = {
+                "version_id": version.id if version else None,
                 "kind": dependency.kind.value,
                 "shot_index": dependency.shot_index,
                 "outputs": deepcopy(version.output_paths) if version else {},
@@ -174,6 +208,7 @@ class RebuildEngine:
         kinds: Iterable[NodeKind | str] | None = None,
         node_ids: Iterable[str] | None = None,
         confirmed: bool = False,
+        _automatic: bool = False,
     ) -> list[str]:
         project_id = project if isinstance(project, str) else project.id
         selected = {NodeKind(kind) for kind in kinds} if kinds is not None else set(JOB_TYPES)
@@ -187,6 +222,22 @@ class RebuildEngine:
             if current is None:
                 raise KeyError(f"Project {project_id} was not found")
             repo = ProjectRepo(session)
+            for node in current.nodes:
+                execution = node.recipe.get("_execution")
+                changed_clean_runtime = (
+                    node.kind in {NodeKind.SINGING_VOICE, NodeKind.PERFORMANCE_FINAL}
+                    and node.status == NodeStatus.CLEAN
+                )
+                legacy_failed_final = (
+                    not _automatic
+                    and node.kind == NodeKind.PERFORMANCE_FINAL
+                    and node.status == NodeStatus.FAILED
+                    and (not isinstance(execution, dict) or execution.get("ai_label") is not True)
+                )
+                if changed_clean_runtime or legacy_failed_final:
+                    effective = self._execution_settings(node)
+                    if execution != effective:
+                        repo.update_recipe(node, {"_execution": effective})
             plan = repo.plan_rebuild(current)
             active = list(
                 session.scalars(
@@ -197,6 +248,22 @@ class RebuildEngine:
                 )
             )
             active_nodes = {job.node_id for job in active}
+            cancelled_nodes: set[str] = set()
+            if _automatic:
+                # A user's cancellation survives sibling completions and restarts.
+                # An explicit rebuild or queue retry creates/reactivates a newer job,
+                # so the cancellation stops suppressing that node naturally.
+                latest: dict[str, JobStatus] = {}
+                for job in session.scalars(
+                    select(Job)
+                    .where(Job.project_id == project_id, Job.node_id.is_not(None))
+                    .order_by(Job.created_at.desc(), Job.id.desc())
+                ):
+                    assert job.node_id is not None
+                    latest.setdefault(job.node_id, job.status)
+                cancelled_nodes = {
+                    node_id for node_id, status in latest.items() if status == JobStatus.CANCELLED
+                }
             reserved = reserved_cost(session, project_id)
             job_ids: list[str] = []
             for node in plan:
@@ -204,8 +271,13 @@ class RebuildEngine:
                     node.kind not in selected
                     or node.kind not in JOB_TYPES
                     or node.id in active_nodes
+                    or node.id in cancelled_nodes
                     or (selected_ids is not None and node.id not in selected_ids)
                 ):
+                    continue
+                if node.kind == NodeKind.PERFORMANCE_LIPSYNC and not (
+                    current.performance_config or {}
+                ).get("lipsync"):
                     continue
                 if any(parent.status != NodeStatus.CLEAN for parent in node.depends_on):
                     continue
@@ -243,7 +315,7 @@ class RebuildEngine:
                 }
                 model_key = (
                     node.recipe["_execution"]["image_model"]
-                    if job_type == "image_gen"
+                    if job_type in {"image_gen", "scene_reference"}
                     else job_type
                 )
                 job_ids.append(
@@ -340,9 +412,10 @@ class RebuildEngine:
     def _record_attempt(
         session: Session, job: Job, project: Project, attempt: int, cost: float
     ) -> None:
+        execution = (job.payload.get("recipe") or {}).get("_execution") or {}
         provider = (
-            "openai"
-            if job.job_type == "image_gen"
+            str(execution.get("image_provider", "openai"))
+            if job.job_type in {"image_gen", "scene_reference"}
             else ("comfyui" if job.lane == "gpu" else "ffmpeg")
         )
         CostLedger(session).record_attempt(
@@ -442,7 +515,13 @@ class RebuildEngine:
             selected_ids = saved.payload.get("selected_node_ids")
             confirmed = bool(saved.payload.get("confirmed", False))
             session.commit()
-        self.rebuild(job.project_id, kinds=selected, node_ids=selected_ids, confirmed=confirmed)
+        self.rebuild(
+            job.project_id,
+            kinds=selected,
+            node_ids=selected_ids,
+            confirmed=confirmed,
+            _automatic=True,
+        )
 
 
 def rebuild(project: Project | str, *, engine: RebuildEngine, **kwargs: Any) -> list[str]:

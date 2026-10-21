@@ -1,7 +1,10 @@
 import {api, tool, upload, mediaURL} from "../api.js";
 import {h, button, form, dialog, notice, media, badge, money, date} from "../components.js";
 import {t} from "../i18n/zh.js";
+import {chooseImageModel, currentImageChoice, imageSettingChanges, loadImageModels} from "../imageModels.js";
 import {liveMindMap} from "../mindmap.js";
+import {renderProject as performanceProject} from "./performance.js";
+import {jobExecution, jobFailure, jobCopyButton, jobErrorDetails, jobDiagnosticList, hasJobSelection} from "../jobExecution.js";
 
 const TABS = ["chat", "mindmap", "overview", "storyboard", "shots", "final", "analysis"];
 const SHOT_KINDS = ["shot_frame", "shot_video", "voiceover", "lipsync", "subtitles"];
@@ -69,25 +72,27 @@ async function runTool(ctx, project, name, args = {}) {
   return result;
 }
 
-function jobRows(jobs) {
-  const recent = [...jobs].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 6);
-  if (!recent.length) return paragraph(p("noJobs"));
-  return h("div", {class: "job-inline-list"}, ...recent.map(job => h("div", {class: "job-inline-row"},
+function liveJobs(ctx, projectId, jobs) {
+  const list = jobDiagnosticList({signal: ctx.signal, limit: 6, scope: '最近 6 项任务（当前可见列表）', empty: p("noJobs"), className: 'job-inline-list', render: job => h("div", {class: "job-inline-row"},
     h("span", {}, p(`kind.${job.job_type}`)),
     badge(job.status),
     h("small", {class: "muted"}, `${p("attempts")} ${job.attempts}/${job.max_attempts}`),
-    job.error && h("details", {}, h("summary", {}, p("errorDetails")), h("pre", {}, job.error)),
-  )));
-}
-
-function liveJobs(projectId, jobs) {
-  return h("div", {class: "project-live-jobs", "data-project-live-jobs": projectId}, jobRows(jobs));
+    h("small", {class: "muted", title: job.id}, `#${job.id.slice(0, 8)}`),
+    jobCopyButton(job),
+    jobExecution(job),
+    jobFailure(job),
+    jobErrorDetails(job),
+  )});
+  list.classList.add('project-live-jobs');
+  list.dataset.projectLiveJobs = projectId;
+  list.updateJobs(jobs);
+  return list;
 }
 
 async function refreshLiveJobs(ctx, projectId) {
   const latest = await api(path(projectId, "/jobs"), {signal: ctx.signal});
   document.querySelectorAll(`[data-project-live-jobs="${projectId}"]`).forEach(element => {
-    element.replaceChildren(jobRows(latest));
+    element.updateJobs(latest);
   });
 }
 
@@ -184,7 +189,13 @@ async function overview(ctx, project, usage, jobs) {
     ),
     step(4, p("step.frames"), p("step.framesDescription"), stage(project, frames, "frames"),
       h("div", {class: "row wrap"},
-        button(p("generateFrames"), () => runTool(ctx, project, "generate_frames"), {disabled: !approved(project, "script")}),
+        button(p("generateFrames"), async () => {
+          const [models, settings] = await Promise.all([loadImageModels(), api("/settings")]);
+          const choice = await chooseImageModel(models, currentImageChoice(settings.settings));
+          if (!choice) return;
+          await api("/settings", {method: "PUT", body: imageSettingChanges(choice.provider, choice.model)});
+          await runTool(ctx, project, "generate_frames");
+        }, {disabled: !approved(project, "script")}),
         anchor(p("viewShots"), route(project.id, "shots")),
         approvalButton(ctx, project, "frames", isReady(frames)),
       ),
@@ -210,7 +221,7 @@ async function overview(ctx, project, usage, jobs) {
         h("div", {}, h("dt", {}, p("inputTokens")), h("dd", {}, tokens(usage.input_tokens))),
         h("div", {}, h("dt", {}, p("outputTokens")), h("dd", {}, tokens(usage.output_tokens))),
       ), anchor(p("tokenDetails"), "#/costs")),
-      panel(p("recentJobs"), liveJobs(project.id, jobs), anchor(p("allJobs"), "#/jobs")),
+      panel(p("recentJobs"), liveJobs(ctx, project.id, jobs), anchor(p("allJobs"), "#/jobs")),
     ),
   );
 }
@@ -450,8 +461,8 @@ function row(side, ...bubbles) {
   return h("div", {class: `msg-row msg-${side}`}, side === "me" ? [content, avatar(side)] : [avatar(side), content]);
 }
 
-function chatMessages(messages) {
-  if (!messages.length) return h("div", {class: "chat-empty"}, h("div", {class: "avatar avatar-director big"}, "导"), h("h2", {}, p("chatWelcome")), paragraph(p("chatWelcomeHelp")));
+function chatMessages(messages, mode) {
+  if (!messages.length) return h("div", {class: "chat-empty"}, h("div", {class: "avatar avatar-director big"}, "导"), h("h2", {}, mode === "performance_remix" ? "开始制作唱跳样片" : p("chatWelcome")), paragraph(mode === "performance_remix" ? "选择参考唱跳视频、目标人物与声音，告诉导演要换成什么场景。导演会保留歌曲与动作，分阶段准备、生成预览和成片。" : p("chatWelcomeHelp")));
   const items = [];
   let last = 0;
   let pendingTools = [];
@@ -499,7 +510,7 @@ function chatMessages(messages) {
   return h("div", {class: "chat-messages"}, ...items);
 }
 
-function activity(jobs) {
+function activity(jobs, mode) {
   const active = jobs.filter(job => ["queued", "running"].includes(job.status));
   const kinds = new Set(active.map(job => job.job_type));
   const key = kinds.has("analyze_video") ? "watching"
@@ -508,20 +519,21 @@ function activity(jobs) {
     : active.length ? "working" : "";
   if (!key) return null;
   const count = active.length > 1 ? ` · ${active.length} ${p("jobsInFlight")}` : "";
-  return h("div", {class: "chat-activity", role: "status"}, h("span", {class: "pulse", "aria-hidden": "true"}), `${p(`activity.${key}`)}${count}`);
+  const label = key === "reporting" && mode === "performance_remix" ? "步骤完成，导演正在整理报告…" : p(`activity.${key}`);
+  return h("div", {class: "chat-activity", role: "status"}, h("span", {class: "pulse", "aria-hidden": "true"}), `${label}${count}`);
 }
 
 const ATTACH_KINDS = {image: /\.(png|jpe?g|webp)$/i, video: /\.(mp4|mov|webm|mkv|avi)$/i, audio: /\.(wav|mp3|m4a|flac)$/i};
 const kindOf = name => Object.keys(ATTACH_KINDS).find(kind => ATTACH_KINDS[kind].test(name)) || null;
 
-export async function chatPanel(ctx, projectId, {compact = false} = {}) {
+export async function chatPanel(ctx, projectId, {compact = false, mode} = {}) {
   const [history, initialJobs] = await Promise.all([
     api(path(projectId, "/chat"), {signal: ctx.signal}),
     api(path(projectId, "/jobs"), {signal: ctx.signal}),
   ]);
-  const log = h("div", {class: "chat-log", role: "log", "aria-live": "polite", "aria-label": p("chatHistory")}, chatMessages(history));
-  const status = h("div", {class: "chat-status"}, activity(initialJobs));
-  const textarea = h("textarea", {name: "message", rows: compact ? 1 : 2, placeholder: p("messagePlaceholder"), "aria-label": p("message")});
+  const log = h("div", {class: "chat-log", role: "log", "aria-live": "polite", "aria-label": p("chatHistory")}, chatMessages(history, mode));
+  const status = h("div", {class: "chat-status"}, activity(initialJobs, mode));
+  const textarea = h("textarea", {name: "message", rows: compact ? 1 : 2, placeholder: mode === "performance_remix" ? "例如：保留这段唱跳动作，把场景改成霓虹舞台。" : p("messagePlaceholder"), "aria-label": p("message")});
   const picker = h("input", {type: "file", multiple: true, accept: ".png,.jpg,.jpeg,.webp,.mp4,.mov,.webm,.mkv,.avi,.wav,.mp3,.m4a,.flac", hidden: true});
   const chips = h("div", {class: "attach-chips"});
   let files = [];
@@ -543,7 +555,7 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
   const scrollEnd = () => { log.scrollTop = log.scrollHeight; };
   const show = messages => {
     signature = JSON.stringify(messages);
-    log.replaceChildren(chatMessages(messages));
+    log.replaceChildren(chatMessages(messages, mode));
   };
   composer.addEventListener("submit", async event => {
     event.preventDefault();
@@ -556,7 +568,7 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
     files = []; renderChips();
     const pending = JSON.parse(signature);
     pending.push({role: "user", content: text, at: new Date().toISOString(), attachments: outgoing.map(file => ({kind: kindOf(file.name), path: "", caption: file.name}))});
-    log.replaceChildren(chatMessages(pending.map(message => ({...message, attachments: (message.attachments || []).filter(item => item.path)}))));
+    log.replaceChildren(chatMessages(pending.map(message => ({...message, attachments: (message.attachments || []).filter(item => item.path)})), mode));
     if (outgoing.length) log.lastElementChild?.append(h("div", {class: "msg-system"}, p("attach.uploading")));
     log.append(h("div", {class: "chat-thinking"}, h("span", {class: "pulse", "aria-hidden": "true"}), p("thinking")));
     scrollEnd();
@@ -586,7 +598,7 @@ export async function chatPanel(ctx, projectId, {compact = false} = {}) {
     if (sending) return;
     const [messages, jobs] = await Promise.all([api(path(projectId, "/chat")), api(path(projectId, "/jobs"))]);
     if (ctx.signal?.aborted || sending) return;
-    status.replaceChildren(activity(jobs) || "");
+    status.replaceChildren(activity(jobs, mode) || "");
     if (JSON.stringify(messages) !== signature) {
       const nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
       show(messages);
@@ -610,7 +622,7 @@ function agentPanel(ctx, projectId) {
     list.querySelectorAll("details[open]").forEach(element => open.add(element.dataset.id));
     if (!agents.length) { list.replaceChildren(paragraph(p("agents.empty"))); return; }
     list.replaceChildren(...agents.map(agent => {
-      const busy = ["working", "watching"].includes(agent.status);
+      const busy = ["working", "watching", "waiting"].includes(agent.status);
       const item = h("details", {class: "agent-item", "data-id": agent.id},
         h("summary", {},
           h("span", {class: "agent-name"}, agent.name),
@@ -632,8 +644,8 @@ function agentPanel(ctx, projectId) {
 
 async function chat(ctx, project, initialJobs) {
   const panelElement = await chatPanel(ctx, project.id);
-  const jobs = liveJobs(project.id, initialJobs);
-  ctx.poll(async () => { jobs.replaceChildren(jobRows(await api(path(project.id, "/jobs")))); }, 4000);
+  const jobs = liveJobs(ctx, project.id, initialJobs);
+  ctx.poll(async () => { jobs.updateJobs(await api(path(project.id, "/jobs"), {signal: ctx.signal})); }, 4000);
   const source = project.source_video_path;
   return h("div", {class: "project-chat-grid"}, panelElement,
     h("aside", {class: "stack"},
@@ -651,6 +663,7 @@ export async function render(ctx) {
   if (!id) return panel(p("selectProject"), paragraph(p("selectProjectHelp")), anchor(p("dashboard"), "#/dashboard"));
   const current = TABS.includes(ctx.params?.[1]) ? ctx.params[1] : "chat";
   const [project, jobs] = await Promise.all([api(path(id, "/status")), api(path(id, "/jobs"))]);
+  if (project.mode === "performance_remix") return performanceProject(ctx, project, jobs);
   const usage = ctx.projects?.find(item => item.id === id) || {};
   const tabs = h("nav", {class: "project-tabs", "aria-label": p("tabsLabel")}, ...TABS.map(tab => anchor(p(`tabs.${tab}`), route(id, tab), {class: current === tab ? "active" : "", "aria-current": current === tab ? "page" : null})));
   const header = h("header", {class: "page-heading row spread wrap"}, h("div", {class: "stack compact"}, h("p", {class: "eyebrow"}, project.mode === "anime_sequel" ? t("anime.eyebrow") : p("projectWorkspace")), h("h1", {}, project.title)), h("div", {class: "toolbar"}, button(p("refresh"), () => ctx.reload(), {small: true}), button(p("deleteProject"), async () => { if (await deleteProject(project)) location.hash = "#/"; }, {small: true, danger: true})));
@@ -668,7 +681,7 @@ export async function render(ctx) {
     const signature = JSON.stringify([project.nodes.map(node => [node.id, node.status, node.current_version_id]), project.reviews]);
     ctx.poll(async () => {
       const next = await api(path(id, "/status"));
-      if (ctx.signal?.aborted || document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+      if (ctx.signal?.aborted || document.querySelector("dialog[open]") || hasJobSelection(view) || view.querySelector('.job-error-details[open]') || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
       if (JSON.stringify([next.nodes.map(node => [node.id, node.status, node.current_version_id]), next.reviews]) !== signature) {
         if (edited || [...view.querySelectorAll("video,audio")].some(element => !element.paused && !element.ended)) {
           if (!updateNoticed) { notice(p("refreshAvailable")); updateNoticed = true; }

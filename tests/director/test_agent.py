@@ -12,6 +12,7 @@ from sqlalchemy import select
 from avd.config import ModelPrice, Settings
 from avd.director import ChatMessage, DirectorAgent
 from avd.director.agent import ROUND_LIMIT_MESSAGE, SYSTEM_PROMPT
+from avd.director.review import Review  # noqa: F401 - register the schema before init_db
 from avd.llm import ChatResponse, CostEntry, FakeProvider
 from avd.llm.providers import ToolCall
 from avd.runtime import Runtime
@@ -220,6 +221,183 @@ def test_paid_usage_survives_tool_failure_and_later_provider_failure(harness: Ag
         project = session.get(Project, harness.project_id)
         assert project is not None
         assert project.spent == pytest.approx(0.002)
+
+
+def test_event_retries_append_notice_once_and_reuse_completed_reply(harness: AgentHarness) -> None:
+    harness.provider.responses.extend([RuntimeError("provider quota exhausted"), "Saved report"])
+    agent = DirectorAgent(harness.runtime)
+    with pytest.raises(RuntimeError, match="quota exhausted"):
+        agent.chat(harness.project_id, "Analysis ready", event=True, event_id="report-job")
+    assert (
+        DirectorAgent(harness.runtime).chat(
+            harness.project_id, "Analysis ready", event=True, event_id="report-job"
+        )
+        == "Saved report"
+    )
+    calls = len(harness.provider.calls)
+    assert (
+        DirectorAgent(harness.runtime).chat(
+            harness.project_id, "Analysis ready", event=True, event_id="report-job"
+        )
+        == "Saved report"
+    )
+    assert len(harness.provider.calls) == calls
+    history = agent.history(harness.project_id)
+    assert [message["role"] for message in history] == ["user", "assistant"]
+    assert history[0]["event_id"] == "report-job"
+    assert all("event_id" not in message for message in harness.provider.calls[-1]["messages"])
+
+
+def test_event_retry_retains_tool_result_without_executing_it_again(
+    harness: AgentHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from avd.director.tools import DirectorTools
+
+    executed = []
+
+    def execute(self: DirectorTools, name: str, arguments: dict[str, Any]) -> str:
+        executed.append(name)
+        return "Queued job: saved-job"
+
+    monkeypatch.setattr(DirectorTools, "execute", execute)
+    harness.provider.responses.extend(
+        [
+            ChatResponse(tool_calls=[ToolCall(id="queue-once", name="generate_frames")]),
+            RuntimeError("provider unavailable after queue submission"),
+            "The saved job is still queued.",
+        ]
+    )
+    agent = DirectorAgent(harness.runtime)
+    with pytest.raises(RuntimeError, match="after queue submission"):
+        agent.chat(harness.project_id, "Continue work", event=True, event_id="work-job")
+    assert (
+        agent.chat(harness.project_id, "Continue work", event=True, event_id="work-job")
+        == "The saved job is still queued."
+    )
+    assert executed == ["generate_frames"]
+    history = agent.history(harness.project_id)
+    assert [message["role"] for message in history] == ["user", "assistant", "tool", "assistant"]
+    assert history[2]["content"] == "Queued job: saved-job"
+    assert sum(message.get("event") is True for message in history) == 1
+
+
+def test_interrupted_event_pairs_unknown_tool_outcome_without_replaying(
+    harness: AgentHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from avd.director.tools import DirectorTools
+
+    def execute(self: DirectorTools, name: str, arguments: dict[str, Any]) -> str:
+        pytest.fail("An interrupted tool outcome must not be replayed automatically")
+
+    monkeypatch.setattr(DirectorTools, "execute", execute)
+    agent = DirectorAgent(harness.runtime)
+    agent._append(
+        harness.project_id,
+        {"role": "user", "content": "Continue", "event": True, "event_id": "interrupted-job"},
+    )
+    assistant = ChatResponse(
+        tool_calls=[ToolCall(id="unknown-outcome", name="generate_frames")]
+    ).as_message()
+    assistant["event_id"] = "interrupted-job"
+    agent._append(harness.project_id, assistant)
+    harness.provider.responses.append("I will inspect the queued jobs.")
+    assert (
+        agent.chat(harness.project_id, "Continue", event=True, event_id="interrupted-job")
+        == "I will inspect the queued jobs."
+    )
+    history = agent.history(harness.project_id)
+    assert history[2]["role"] == "tool"
+    assert history[2]["tool_call_id"] == "unknown-outcome"
+    assert "outcome is unknown" in history[2]["content"]
+    assert "was not replayed" in history[2]["content"]
+
+
+def test_distinct_events_with_same_notice_are_not_deduplicated(harness: AgentHarness) -> None:
+    harness.provider.responses.extend(["First report", "Second report"])
+    agent = DirectorAgent(harness.runtime)
+    assert agent.chat(harness.project_id, "Ready", event=True, event_id="job-1") == "First report"
+    assert agent.chat(harness.project_id, "Ready", event=True, event_id="job-2") == "Second report"
+    assert len(agent.history(harness.project_id)) == 4
+    with pytest.raises(ValueError, match="different notice"):
+        agent.chat(harness.project_id, "Other notice", event=True, event_id="job-1")
+
+
+def test_event_retry_does_not_reexecute_a_repeated_model_tool_call_id(
+    harness: AgentHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from avd.director.tools import DirectorTools
+
+    executed = []
+    monkeypatch.setattr(
+        DirectorTools, "execute", lambda self, name, arguments: executed.append(name) or "saved job"
+    )
+    call = ToolCall(id="stable-call", name="generate_frames")
+    harness.provider.responses.extend(
+        [
+            ChatResponse(tool_calls=[call]),
+            RuntimeError("temporary failure"),
+            ChatResponse(tool_calls=[call]),
+            "Ready",
+        ]
+    )
+    agent = DirectorAgent(harness.runtime)
+    with pytest.raises(RuntimeError, match="temporary failure"):
+        agent.chat(harness.project_id, "Work", event=True, event_id="same-call-job")
+    assert agent.chat(harness.project_id, "Work", event=True, event_id="same-call-job") == "Ready"
+    assert executed == ["generate_frames"]
+
+
+def test_event_recovery_keeps_tool_pairing_after_a_later_user_turn(
+    harness: AgentHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent = DirectorAgent(harness.runtime)
+    agent._append(
+        harness.project_id,
+        {"role": "user", "content": "Notice", "event": True, "event_id": "late-retry"},
+    )
+    assistant = ChatResponse(tool_calls=[ToolCall(id="orphan-call", name="rebuild")]).as_message()
+    assistant["event_id"] = "late-retry"
+    agent._append(harness.project_id, assistant)
+    agent._append(harness.project_id, {"role": "user", "content": "Status?"})
+    agent._append(harness.project_id, {"role": "assistant", "content": "Checking"})
+    harness.provider.responses.extend(["Recovered report", "Later answer"])
+    assert (
+        agent.chat(harness.project_id, "Notice", event=True, event_id="late-retry")
+        == "Recovered report"
+    )
+    assert [message["role"] for message in harness.provider.calls[0]["messages"]] == [
+        "system",
+        "user",
+        "assistant",
+        "tool",
+        "user",
+        "assistant",
+    ]
+    assert agent.chat(harness.project_id, "Another question") == "Later answer"
+    messages = harness.provider.calls[1]["messages"]
+    assert messages[3]["role"] == "tool" and messages[3]["tool_call_id"] == "orphan-call"
+    assert agent.history(harness.project_id)[2]["content"] == "Status?"
+
+
+def test_event_request_passes_job_id_to_router_for_actual_route_tracking(
+    harness: AgentHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed = []
+    original = harness.runtime.router
+
+    def router(session, project, *, job_id=None):
+        observed.append(job_id)
+        return original(session, project, job_id=job_id)
+
+    monkeypatch.setattr(harness.runtime, "router", router)
+    harness.provider.responses.append("Report")
+    assert (
+        DirectorAgent(harness.runtime).chat(
+            harness.project_id, "Notice", event=True, event_id="tracked-job"
+        )
+        == "Report"
+    )
+    assert observed == ["tracked-job"]
 
 
 def test_tool_can_write_in_own_session_after_paid_response(

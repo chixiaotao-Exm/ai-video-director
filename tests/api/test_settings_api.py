@@ -273,6 +273,7 @@ def test_provider_failure_cannot_leak_secret(settings_api):
 
 def test_provider_test_uses_only_eight_output_tokens(settings_api, monkeypatch):
     client, runtime, _, _, project_id = settings_api
+    assert client.put("/settings", json={"script_model": "gpt-test"}).status_code == 200
     observed: dict[str, Any] = {}
     original = runtime.router
 
@@ -290,6 +291,112 @@ def test_provider_test_uses_only_eight_output_tokens(settings_api, monkeypatch):
     monkeypatch.setattr(runtime, "router", router)
     assert client.post("/settings/test/openai", json={"project_id": project_id}).status_code == 200
     assert observed["max_output_tokens"] == 8
+
+
+@pytest.mark.parametrize("with_project", [False, True])
+@pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-sol-2026-10-01"])
+def test_responses_connection_probe_allows_256_tokens(
+    settings_api, monkeypatch, with_project, model
+):
+    from avd.llm.router import LLMRouter
+
+    client, _, _, _, project_id = settings_api
+    assert client.put("/settings", json={"script_model": model}).status_code == 200
+    observed = []
+    original = LLMRouter._provider
+
+    def provider(router, name):
+        observed.append(router.settings.llm_max_output_tokens)
+        return original(router, name)
+
+    monkeypatch.setattr(LLMRouter, "_provider", provider)
+    body = {"project_id": project_id} if with_project else {}
+    response = client.post("/settings/test/openai", json=body)
+    assert response.status_code == 200, response.text
+    assert observed == [256]
+
+
+@pytest.mark.parametrize("with_project", [False, True])
+def test_provider_test_uses_effective_director_override_instead_of_another_providers_script(
+    settings_api, with_project: bool
+):
+    client, runtime, fake, app, project_id = settings_api
+    response = client.put(
+        "/settings",
+        json={
+            "director_provider": "openai",
+            "director_model": "legacy-director",
+            "script_provider": "anthropic",
+            "script_model": "different-provider-script",
+            "llm_routes": {"director": {"provider": "openai", "model": "selected-director"}},
+        },
+    )
+    assert response.status_code == 200
+    body = {"project_id": project_id} if with_project else {}
+    response = client.post("/settings/test/openai", json=body)
+    assert response.status_code == 200, response.text
+    assert fake.calls[0]["model"] == "selected-director"
+    assert response.json()["model"] == "selected-director"
+    assert response.json()["role"] == "director"
+    assert app.state.connection_checks["openai"]["model"] == "selected-director"
+
+
+def test_anthropic_test_uses_an_assigned_script_model_when_director_uses_openai(settings_api):
+    client, _, fake, _, project_id = settings_api
+    response = client.put(
+        "/settings",
+        json={
+            "director_provider": "openai",
+            "director_model": "openai-director",
+            "script_provider": "anthropic",
+            "script_model": "anthropic-script",
+        },
+    )
+    assert response.status_code == 200
+    response = client.post("/settings/test/anthropic", json={"project_id": project_id})
+    assert response.status_code == 200, response.text
+    assert fake.calls[0]["model"] == "anthropic-script"
+    assert response.json()["role"] == "script"
+
+
+def test_connection_test_can_explicitly_target_a_selected_role(settings_api):
+    client, _, fake, _, project_id = settings_api
+    client.put("/settings", json={"qa_model": "selected-qa"})
+    response = client.post("/settings/test/openai", json={"project_id": project_id, "role": "qa"})
+    assert response.status_code == 200, response.text
+    assert fake.calls[0]["model"] == "selected-qa"
+    assert response.json()["role"] == "qa"
+
+
+@pytest.mark.parametrize("role", ["director", "unknown"])
+def test_explicit_role_with_a_different_provider_or_unknown_role_is_rejected_before_call(
+    settings_api, role: str
+):
+    client, _, fake, _, project_id = settings_api
+    response = client.post("/settings/test/openai", json={"project_id": project_id, "role": role})
+    assert response.status_code == 422
+    assert fake.calls == []
+
+
+def test_provider_without_any_active_role_does_not_reuse_a_cross_provider_field(settings_api):
+    client, _, fake, _, project_id = settings_api
+    client.put(
+        "/settings",
+        json={"director_provider": "openai", "director_model": "relay-director"},
+    )
+    response = client.post("/settings/test/anthropic", json={"project_id": project_id})
+    assert response.status_code == 422
+    assert fake.calls == []
+
+
+def test_provider_failure_still_identifies_the_effective_test_model_and_role(settings_api):
+    client, _, fake, app, project_id = settings_api
+    fake.responses = [RuntimeError("upstream temporarily unavailable")]
+    response = client.post("/settings/test/openai", json={"project_id": project_id, "role": "qa"})
+    assert response.status_code == 502
+    assert response.json()["detail"]["role"] == "qa"
+    assert response.json()["detail"]["model"] == fake.calls[0]["model"]
+    assert app.state.connection_checks["openai"]["role"] == "qa"
 
 
 def test_comfyui_test_is_explicit_and_uses_selected_profile(settings_api):
@@ -347,3 +454,31 @@ def test_integrated_validation_errors_never_echo_submitted_keys(tmp_path: Path):
             assert "private-validation-secret" not in response.text
     finally:
         runtime.close()
+
+
+def test_image_model_list_queries_all_configured_providers(settings_api):
+    client, runtime, _, app, _ = settings_api
+    runtime.settings = runtime.settings.model_copy(
+        update={
+            "openai_api_key": __import__("pydantic").SecretStr("o-key"),
+            "gemini_api_key": __import__("pydantic").SecretStr("g-key"),
+            "grok_api_key": __import__("pydantic").SecretStr("x-key"),
+        }
+    )
+    requested = []
+    models = {
+        "Bearer o-key": "gpt-image-2",
+        "Bearer g-key": "gemini-3.1-flash-image",
+        "Bearer x-key": "grok-imagine-image-2.0",
+    }
+
+    def response(request):
+        key = request.headers["authorization"]
+        requested.append(key)
+        return httpx.Response(200, json={"data": [{"id": models[key]}]})
+
+    app.state.models_test_transport = httpx.MockTransport(response)
+    result = client.get("/settings/image-models")
+    assert result.status_code == 200
+    assert {m["model"] for m in result.json()["models"]} == set(models.values())
+    assert set(requested) == set(models)

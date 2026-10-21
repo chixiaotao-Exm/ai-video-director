@@ -12,8 +12,13 @@ from avd.state.repo import ProjectRepo
 def main() -> None:
     settings = Settings()
     prompt = settings.smoke_image_prompt
-    if not settings.openai_api_key or not prompt:
-        print("Skipped: set AVD_OPENAI_API_KEY and AVD_SMOKE_IMAGE_PROMPT.")
+    provider, _model = settings.image_route()
+    key = {
+        "gemini": settings.gemini_api_key,
+        "grok": settings.grok_api_key,
+    }.get(provider, settings.openai_api_key)
+    if not key or not prompt:
+        print(f"Skipped: set the {provider} image API key and AVD_SMOKE_IMAGE_PROMPT.")
         return
     if settings.smoke_image_reference:
         print(

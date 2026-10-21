@@ -158,6 +158,33 @@ def test_existing_quarantine_is_visible_and_never_automatically_recovered(queue,
     assert queue.get(job_id).claim_token == job.claim_token
 
 
+def test_worker_exit_preserves_actionable_remote_quarantine_reason(queue, tmp_path):
+    job_id = queue.submit("gpu", "motion_video", {})
+    owned = queue.claim_next("gpu")
+    queue.submit("gpu", "singing_voice", {})
+    supervisor, factory = make_supervisor(queue, tmp_path)
+    supervisor.start("gpu")
+    process = factory.processes[0]
+    process.active.set(owned)
+    queue.quarantine(
+        job_id,
+        "Prompt offline-prompt remains on frozen ComfyUI; inspect remote-submission.json "
+        "before exclusive recovery",
+        claim_token=owned.claim_token,
+    )
+    original_error = queue.get(job_id).error
+    process.alive = False
+    process.exitcode = 1
+    assert row(supervisor.status(), "gpu")["state"] == "failed"
+    stored = queue.get(job_id)
+    assert stored.error == original_error
+    assert stored.claim_token != owned.claim_token
+    assert not queue.heartbeat(job_id, owned.claim_token)
+    assert queue.recover_stale() == 0
+    assert queue.claim_next("gpu") is None
+    supervisor.close()
+
+
 def test_hard_stop_fences_only_owned_attempt_and_blocks_late_heartbeat(queue, tmp_path):
     job_id = queue.submit("gpu", "work", {})
     owned = queue.claim_next("gpu")

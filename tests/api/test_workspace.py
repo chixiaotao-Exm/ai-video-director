@@ -515,3 +515,12 @@ def test_system_database_error_is_sanitized(workspace, monkeypatch) -> None:
     monkeypatch.setattr(runtime, "session_factory", fail)
     response = client.get("/system")
     assert response.status_code == 503 and "database-secret" not in response.text
+
+
+@pytest.mark.parametrize("provider", ["grok", "deepseek"])
+def test_public_diagnostics_redact_every_configured_provider(provider):
+    settings = Settings(_env_file=None, **{f"{provider}_api_key": "opaque-provider-credential"})
+    result = redact_public(
+        {"error": "opaque-provider-credential", "nested": ["opaque-provider-credential"]}, settings
+    )
+    assert "opaque-provider-credential" not in str(result)

@@ -114,6 +114,56 @@ def test_recover_stale_exhausted_job_fails_as_worker_crash(queue):
     assert recovered.finished_at is not None
 
 
+@pytest.mark.parametrize("job_type", ["motion_video", "performance_lipsync"])
+@pytest.mark.parametrize("max_attempts", [1, 2])
+def test_expired_remote_gpu_attempt_holds_seed_until_exclusive_recovery(
+    queue, job_type, max_attempts
+):
+    job_id = queue.submit(
+        "gpu",
+        job_type,
+        {"recipe": {"comfyui_profile": {"base_url": "http://127.0.0.1:8188"}}},
+        max_attempts=max_attempts,
+    )
+    owned = queue.claim_next("gpu")
+    seed_id = queue.submit("gpu", "singing_voice", {}, priority=10)
+    _expire_lease(queue, job_id)
+    assert queue.recover_stale() == 1
+    quarantined = queue.get(job_id)
+    assert quarantined.status == JobStatus.RUNNING
+    assert quarantined.started_at == owned.started_at
+    assert quarantined.lease_expires_at.year == datetime.max.year
+    assert quarantined.claim_token != owned.claim_token
+    assert "Remote ComfyUI execution was not verified stopped" in quarantined.error
+    assert "http://127.0.0.1:8188" in quarantined.error
+    assert "remote-submission.json" in quarantined.error
+    assert "--recover-stale --once" in quarantined.error
+    assert not queue.heartbeat(job_id, owned.claim_token)
+    with pytest.raises(ClaimLostError):
+        queue.complete(job_id, {}, claim_token=owned.claim_token)
+    restarted = JobQueue(queue.session_factory)
+    assert restarted.recover_stale() == 0
+    assert restarted.claim_next("gpu") is None
+    assert restarted.get(seed_id).attempts == 0
+    assert restarted.recover_stale(force=True) == 1
+    assert restarted.get(job_id).status == (
+        JobStatus.FAILED if max_attempts == 1 else JobStatus.QUEUED
+    )
+    assert restarted.claim_next("gpu").id == seed_id
+
+
+@pytest.mark.parametrize("lane,job_type", [("cpu", "motion_video"), ("gpu", "singing_voice")])
+def test_expired_other_attempts_keep_normal_automatic_recovery(queue, lane, job_type):
+    job_id = queue.submit(lane, job_type, {}, max_attempts=2)
+    queue.claim_next(lane)
+    _expire_lease(queue, job_id)
+    assert queue.recover_stale() == 1
+    restored = queue.get(job_id)
+    assert restored.status == JobStatus.QUEUED
+    assert restored.claim_token is None and restored.lease_expires_at is None
+    assert queue.claim_next(lane).id == job_id
+
+
 def test_worker_unknown_job_type_fails_without_retry(queue):
     registry = HandlerRegistry()
     worker = Worker(queue, "api", registry)

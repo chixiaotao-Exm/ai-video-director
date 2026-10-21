@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, select
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from avd.jobs.models import Job, JobStatus
 from avd.state.models import Base, NodeKind, NodeStatus, Project
+from avd.state.paths import relative_path
 
 STAGES = ("structure", "script", "frames", "final")
 _STAGE_KIND = {
@@ -21,6 +23,91 @@ _STAGE_KIND = {
     "frames": NodeKind.SHOT_FRAME,
     "final": NodeKind.FINAL,
 }
+PERFORMANCE_STAGES = ("performance_inputs", "performance_preview", "performance_final")
+
+
+def generation_review_stage(project: Project, node_kind: NodeKind) -> str | None:
+    if project.mode == "performance_remix":
+        if node_kind in {NodeKind.PERFORMANCE_PREPARE, NodeKind.VOCAL_SEPARATION}:
+            return None
+        if node_kind in {
+            NodeKind.SCENE_REFERENCE,
+            NodeKind.SINGING_VOICE,
+            NodeKind.PERFORMANCE_MIX,
+        }:
+            return "performance_inputs"
+        preparation = (project.performance_config or {}).get("preparation")
+        duration = preparation.get("duration_s", 10) if isinstance(preparation, dict) else None
+        if (
+            isinstance(duration, (int, float))
+            and not isinstance(duration, bool)
+            and math.isfinite(duration)
+            and 0 < duration <= 10
+        ):
+            # A short video preview must be generated before it can be reviewed.
+            return "performance_inputs"
+        return "performance_preview"
+    return "script" if node_kind == NodeKind.SHOT_FRAME else "frames"
+
+
+def _performance_fingerprint(project: Project, stage: str) -> str:
+    if not project.performance_config:
+        raise ReviewRequired("Configure performance inputs before review")
+    config = project.performance_config
+    assets = {"character": project.character_id, "voice": project.voice_id}
+    if stage == "performance_inputs":
+        return _hash(
+            {
+                "config": config,
+                "assets": assets,
+                "recipes": [
+                    (n.id, {k: v for k, v in n.recipe.items() if not k.startswith("_")})
+                    for n in sorted(project.nodes, key=lambda n: n.id)
+                ],
+            }
+        )
+    kinds = {
+        NodeKind.SCENE_REFERENCE,
+        NodeKind.SINGING_VOICE,
+        NodeKind.MOTION_VIDEO,
+        NodeKind.PERFORMANCE_SYNC,
+        NodeKind.PERFORMANCE_MIX,
+        NodeKind.PERFORMANCE_FINAL,
+    }
+    if config.get("lipsync"):
+        kinds.add(NodeKind.PERFORMANCE_LIPSYNC)
+    nodes = [n for n in project.nodes if n.kind in kinds]
+    if {n.kind for n in nodes} != kinds or any(
+        n.status != NodeStatus.CLEAN
+        or not n.current_version_id
+        or n.current_version is None
+        or n.current_version.node_id != n.id
+        for n in nodes
+    ):
+        raise ReviewRequired(f"The {stage} output is not ready for review")
+    for node in nodes:
+        if node.kind != NodeKind.PERFORMANCE_FINAL:
+            continue
+        assert node.current_version is not None
+        outputs = node.current_version.output_paths
+        video = outputs.get("video") if isinstance(outputs, dict) else None
+        try:
+            if not isinstance(video, str) or not video.strip():
+                raise ValueError("Final video path is missing")
+            path = relative_path(video)
+            if PurePosixPath(path).suffix.lower() not in {".mp4", ".mov", ".mkv", ".webm"}:
+                raise ValueError("Final output is not a video media path")
+        except ValueError as exc:
+            raise ReviewRequired(f"The {stage} output needs a relative final video path") from exc
+    return _hash(
+        {
+            "review_schema": "performance_video_v1",
+            "stage": stage,
+            "config": config,
+            "assets": assets,
+            "versions": sorted((n.id, n.current_version_id) for n in nodes),
+        }
+    )
 
 
 class ReviewRequired(RuntimeError):
@@ -47,6 +134,10 @@ def _hash(value: Any) -> str:
 
 
 def _stage_fingerprint(session: Session, project: Project, stage: str) -> str:
+    if project.mode == "performance_remix":
+        if stage not in PERFORMANCE_STAGES:
+            raise ValueError(f"Unknown performance review stage: {stage}")
+        return _performance_fingerprint(project, stage)
     if stage not in STAGES:
         raise ValueError(f"Unknown review stage: {stage}")
     kinds = {_STAGE_KIND[name] for name in STAGES[: STAGES.index(stage) + 1]}
@@ -117,7 +208,7 @@ def require_review(session: Session, project: Project, stage: str) -> None:
 
 def review_status(session: Session, project: Project) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for stage in STAGES:
+    for stage in PERFORMANCE_STAGES if project.mode == "performance_remix" else STAGES:
         review = session.get(Review, (project.id, stage))
         try:
             require_review(session, project, stage)

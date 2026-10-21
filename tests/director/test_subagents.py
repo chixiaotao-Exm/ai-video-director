@@ -137,6 +137,43 @@ def test_worker_researches_with_tools_and_reports(runtime: Any) -> None:
     assert run_worker_turn(runtime, created["agent_id"]) == "stopped"
 
 
+def test_worker_can_ask_the_director_and_wait_for_the_reply(runtime: Any) -> None:
+    runtime.fake.responses = [
+        ChatResponse(
+            tool_calls=[
+                ToolCall(
+                    id="c1", name="message_director", arguments={"message": "用暖色还是冷色？"}
+                )
+            ]
+        )
+    ]
+    created = json.loads(runtime.tools.execute("delegate_task", {"name": "配色", "task": "定颜色"}))
+    reply = run_worker_turn(runtime, created["agent_id"])
+    assert reply == "用暖色还是冷色？"
+    [report] = _reports(runtime)
+    assert "问你" in report and "用暖色还是冷色" in report and "message_subagent" in report
+    tool_names = [item["name"] for item in runtime.fake.calls[0]["tools"]]
+    assert "message_director" in tool_names and "rebuild" not in tool_names
+    with runtime.session_factory() as session:
+        agent = session.get(SubAgent, created["agent_id"])
+        assert agent is not None and agent.status == "waiting"
+        assert agent.transcript[-1]["content"] == "已发给导演，等待回复：用暖色还是冷色？"
+    follow = json.loads(
+        runtime.tools.execute(
+            "message_subagent", {"agent_id": created["agent_id"], "message": "用暖色"}
+        )
+    )
+    assert follow["status"] == "working"
+    with runtime.session_factory() as session:
+        agent = session.get(SubAgent, created["agent_id"])
+        assert agent is not None
+        assert agent.transcript[-1] == {
+            "role": "user",
+            "content": "用暖色",
+            "at": agent.transcript[-1]["at"],
+        }
+
+
 def test_worker_cannot_use_write_tools(runtime: Any) -> None:
     runtime.fake.responses = [
         ChatResponse(tool_calls=[ToolCall(id="c1", name="rebuild", arguments={})]),
@@ -150,3 +187,86 @@ def test_worker_cannot_use_write_tools(runtime: Any) -> None:
         tool_result = next(item for item in agent.transcript if item["role"] == "tool")
         assert "not available to sub-agents" in tool_result["content"]
     assert subagents.WORKER_TOOLS
+
+
+def test_question_notification_retry_does_not_call_model_or_skip_wait(runtime: Any, monkeypatch):
+    runtime.fake.responses = [
+        ChatResponse(
+            tool_calls=[
+                ToolCall(id="ask", name="message_director", arguments={"message": "选哪个场景？"})
+            ]
+        )
+    ]
+    created = json.loads(runtime.tools.execute("delegate_task", {"name": "场景", "task": "选场景"}))
+    original = runtime.queue.submit
+    failures = 0
+
+    def submit(*args, **kwargs):
+        nonlocal failures
+        if args[1] == "director_report" and failures == 0:
+            failures += 1
+            raise RuntimeError("queue unavailable")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runtime.queue, "submit", submit)
+    with pytest.raises(RuntimeError, match="queue unavailable"):
+        run_worker_turn(runtime, created["agent_id"])
+    with runtime.session_factory() as session:
+        agent = session.get(SubAgent, created["agent_id"])
+        assert agent.status == "waiting" and agent.pending_report
+    assert run_worker_turn(runtime, created["agent_id"]) == "选哪个场景？"
+    assert run_worker_turn(runtime, created["agent_id"]) == "选哪个场景？"
+    assert len(runtime.fake.calls) == 1
+    assert len(_reports(runtime)) == 1
+    with runtime.session_factory() as session:
+        agent = session.get(SubAgent, created["agent_id"])
+        assert agent.status == "waiting" and agent.pending_report is None
+
+
+@pytest.mark.parametrize("terminal", [JobStatus.FAILED, JobStatus.CANCELLED])
+def test_terminal_worker_job_releases_working_status(runtime: Any, terminal: JobStatus):
+    created = json.loads(runtime.tools.execute("delegate_task", {"name": "x", "task": "y"}))
+    on_job_finished(runtime, _finish(runtime, created["job_id"], terminal))
+    with runtime.session_factory() as session:
+        agent = session.get(SubAgent, created["agent_id"])
+        assert agent.status == ("failed" if terminal == JobStatus.FAILED else "stopped")
+    if terminal == JobStatus.FAILED:
+        follow = json.loads(
+            runtime.tools.execute(
+                "message_subagent", {"agent_id": created["agent_id"], "message": "重试"}
+            )
+        )
+        assert follow["status"] == "working"
+
+
+def test_stopped_worker_does_not_call_model_again_between_rounds(runtime: Any, monkeypatch):
+    created = json.loads(runtime.tools.execute("delegate_task", {"name": "x", "task": "y"}))
+    runtime.fake.responses = [
+        ChatResponse(tool_calls=[ToolCall(id="read", name="list_library", arguments={})]),
+        ChatResponse(content="不应调用"),
+    ]
+    original = DirectorTools.execute
+
+    def execute(self, name, arguments):
+        result = original(self, name, arguments)
+        if name == "list_library":
+            runtime.tools.execute("stop_subagent", {"agent_id": created["agent_id"]})
+        return result
+
+    monkeypatch.setattr(DirectorTools, "execute", execute)
+    assert run_worker_turn(runtime, created["agent_id"]) == "stopped"
+    assert len(runtime.fake.calls) == 1
+    assert not _reports(runtime)
+
+
+def test_existing_database_adds_pending_report_field(tmp_path: Path):
+    from sqlalchemy import inspect
+
+    engine = create_engine(f"sqlite:///{(tmp_path / 'old.db').as_posix()}")
+    init_db(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("ALTER TABLE subagents DROP COLUMN pending_report")
+    init_db(engine)
+    assert "pending_report" in {c["name"] for c in inspect(engine).get_columns("subagents")}
+    init_db(engine)
+    engine.dispose()

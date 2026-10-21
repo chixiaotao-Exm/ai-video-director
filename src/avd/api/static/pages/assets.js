@@ -1,6 +1,7 @@
 import {api, upload, mediaURL} from "../api.js";
 import {h, button, link, field, input, select, textarea, form, empty, badge, date, dialog, notice, media} from "../components.js";
 import {t} from "../i18n/zh.js";
+import {currentImageChoice, imageModelSelect, loadImageModels, parseImageChoice} from "../imageModels.js";
 
 const views = ["front", "side", "half", "full"];
 
@@ -153,7 +154,7 @@ function createVoice(ctx, preset = null) {
   modal = dialog(t("asset.createVoice"), content);
 }
 
-function generateSheet(ctx) {
+async function generateSheet(ctx) {
   let modal;
   if (!ctx.projects.length) {
     dialog(t("asset.generateSheet"), h("div", {class: "form-stack"},
@@ -162,15 +163,22 @@ function generateSheet(ctx) {
     ));
     return;
   }
+  const [models, settings] = await Promise.all([
+    loadImageModels().catch(() => []),
+    api("/settings").catch(() => ({settings: {}})),
+  ]);
   const content = form([
     h("p", {class: "muted"}, t("asset.sheetHint")),
     field(t("asset.project"), select(projectOptions(ctx), ctx.projectId || "", {name: "project_id", required: true})),
+    field(t("asset.imageModel"), imageModelSelect(models, currentImageChoice(settings.settings || {}), {name: "image_model", required: models.length > 0})),
     field(t("asset.name"), input("text", "", {name: "name", required: true, maxlength: 255})),
     field(t("asset.appearance"), textarea("", {name: "appearance_prompt", required: true, rows: 5, placeholder: t("asset.appearancePlaceholder")})),
   ], async data => {
+    const choice = parseImageChoice(data.get("image_model"));
     await api(`/projects/${encodeURIComponent(String(data.get("project_id")))}/character-sheet`, {method: "POST", body: {
       name: String(data.get("name")).trim(),
       appearance_prompt: String(data.get("appearance_prompt")).trim(),
+      ...(choice ? {image_provider: choice.provider, image_model: choice.model} : {}),
     }});
     modal.close();
     notice(t("asset.sheetQueued"));

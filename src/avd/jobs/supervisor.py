@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol, cast
 
-from sqlalchemy import update
+from sqlalchemy import case, update
 
 from avd.config import Settings
 from avd.observability import configure_logging
@@ -301,7 +301,14 @@ class WorkerSupervisor:
                 .values(
                     claim_token=str(uuid.uuid4()),
                     lease_expires_at=datetime.max.replace(tzinfo=timezone.utc),
-                    error=f"Managed worker cleanup uncertain; manual recovery required: {reason}",
+                    error=case(
+                        (
+                            (Job.lease_expires_at == datetime.max.replace(tzinfo=timezone.utc))
+                            & Job.error.is_not(None),
+                            Job.error,
+                        ),
+                        else_=f"Managed worker cleanup uncertain; manual recovery required: {reason}",
+                    ),
                 )
             )
             session.commit()

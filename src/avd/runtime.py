@@ -7,13 +7,16 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from avd.config import Settings
+from avd.config import LLMRoute, Settings
 from avd.engine import RebuildEngine
 from avd.engine.rebuild import JOB_TYPES, _hash
 from avd.jobs import HandlerRegistry, Job, JobQueue, JobStatus, Worker
+from avd.jobs.execution import captured_route, record_request, route_snapshot
 from avd.jobs.models import JobLane
+from avd.jobs.native import native_execution_observer
 from avd.jobs.process import ProcessRunner
 from avd.llm import BudgetExceeded, CostLedger, LLMRouter
 from avd.llm.budget import acquire_project_budget
@@ -21,7 +24,7 @@ from avd.llm.providers import Provider
 from avd.llm.reservations import reserved_cost
 from avd.observability import configure_logging, log_context
 from avd.state.db import create_engine, create_session_factory, init_db
-from avd.state.models import Node, NodeKind, Project
+from avd.state.models import Node, Project
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,11 +72,13 @@ class Runtime:
             from avd.director.models import ChatMessage  # noqa: F401
             from avd.director.review import Review  # noqa: F401
             from avd.director.subagents import SubAgent  # noqa: F401
+            from avd.performance.voice import init_voice_models
 
             self.database = create_engine(
                 self.settings.database_url, data_dir=self.settings.data_dir
             )
             init_db(self.database)
+            init_voice_models(self.database)
             session_factory = create_session_factory(self.database)
         self.session_factory = session_factory
         self.providers = dict(providers or {})
@@ -85,9 +90,11 @@ class Runtime:
     def _check_schedule(
         self, session: Session, project: Project, node: Node, estimate: float
     ) -> None:
-        from avd.director.review import budget_is_confirmed, require_review
+        from avd.director.review import budget_is_confirmed, generation_review_stage, require_review
 
-        require_review(session, project, "script" if node.kind == NodeKind.SHOT_FRAME else "frames")
+        stage = generation_review_stage(project, node.kind)
+        if stage:
+            require_review(session, project, stage)
         self.engine.budget_guard.check(
             project,
             estimate,
@@ -98,6 +105,13 @@ class Runtime:
 
     def router(self, session: Session, project: Project, *, job_id: str | None = None) -> LLMRouter:
         from avd.director.review import budget_is_confirmed
+
+        job = session.get(Job, job_id) if job_id else None
+        snapshot = captured_route(job) if job else None
+
+        def observe(role: str, route: LLMRoute) -> None:
+            if job is not None:
+                record_request(job, role, route)
 
         def confirmation(current: Project, estimate: float) -> bool:
             reserved = self._reserved(session, current.id, exclude=job_id)
@@ -114,6 +128,8 @@ class Runtime:
             ledger=CostLedger(session, self.settings.model_prices),
             project=project,
             confirmation_check=confirmation,
+            route_overrides={snapshot[0]: snapshot[1]} if snapshot else None,
+            request_observer=observe if job else None,
         )
 
     @staticmethod
@@ -140,14 +156,64 @@ class Runtime:
                 saved.payload = payload
                 session.commit()
 
-        registry = build_registry(self.settings, before_paid=mark_paid)
+        def image_requested(job: Job, provider: str, model: str) -> None:
+            # Image handlers dispatch outside DB sessions. Commit this short write
+            # before the network request so isolated-worker failures retain it.
+            with self.session_factory() as session:
+                saved = session.get(Job, job.id)
+                if (
+                    saved is None
+                    or saved.status != JobStatus.RUNNING
+                    or saved.claim_token != job.claim_token
+                ):
+                    raise ValueError("Image job attempt no longer belongs to this worker")
+                record_request(saved, "image", LLMRoute(provider=provider, model=model))
+                session.commit()
+
+        def native_requested(job: Job, event: dict[str, Any]) -> None:
+            # Serialize ownership validation and append in one short transaction.
+            # Never trust a late spawned worker's detached Job snapshot.
+            with self.session_factory() as session:
+                if session.get_bind().dialect.name == "sqlite":
+                    session.execute(text("BEGIN IMMEDIATE"))
+                saved = session.get(Job, job.id)
+                if (
+                    saved is None
+                    or saved.status != JobStatus.RUNNING
+                    or not job.claim_token
+                    or saved.claim_token != job.claim_token
+                    or saved.attempts != job.attempts
+                ):
+                    raise ValueError("Native model job attempt no longer belongs to this worker")
+                record_request(
+                    saved,
+                    str(event["role"]),
+                    LLMRoute(provider=event["provider"], model=event["model"]),
+                    phase=event["phase"],
+                    details=event["details"],
+                    source=event["source"],
+                )
+                session.commit()
+
+        from avd.performance.backend import LocalPerformanceBackend
+
+        registry = build_registry(
+            self.settings,
+            before_paid=mark_paid,
+            image_request_observer=image_requested,
+            performance_backend=LocalPerformanceBackend(self.settings, self.session_factory),
+        )
         sheet_image_handler = registry.get("image_gen")
         assert sheet_image_handler is not None
 
-        def guard(handler: Callable[[Job], dict[str, Any]]) -> Callable[[Job], dict[str, Any]]:
+        def guard(
+            handler: Callable[[Job], dict[str, Any]], *, project_checks: bool = True
+        ) -> Callable[[Job], dict[str, Any]]:
             def execute(job: Job) -> dict[str, Any]:
-                self.check_job(job)
-                return handler(job)
+                if project_checks:
+                    self.check_job(job)
+                with native_execution_observer(lambda event: native_requested(job, event)):
+                    return handler(job)
 
             return execute
 
@@ -165,9 +231,12 @@ class Runtime:
                 router = self.router(session, project, job_id=job.id)
                 try:
                     if job.job_type == "analyze_video":
-                        template = AnalysisPipeline(repo, router, self.settings).analyze_video(
-                            project
-                        )
+                        template = AnalysisPipeline(
+                            repo,
+                            router,
+                            self.settings,
+                            execution_observer=router.request_observer,
+                        ).analyze_video(project)
                         result = {
                             "summary": "Structure analysis ready for review",
                             "template": template.model_dump(mode="json"),
@@ -208,7 +277,9 @@ class Runtime:
             from avd.director.agent import DirectorAgent
 
             assert job.project_id is not None
-            reply = DirectorAgent(self).chat(job.project_id, job.payload["text"], event=True)
+            reply = DirectorAgent(self).chat(
+                job.project_id, job.payload["text"], event=True, event_id=job.id
+            )
             return {"summary": "Director reported", "reply": reply[:2000]}
 
         registry.register("director_report", director_report)
@@ -216,10 +287,36 @@ class Runtime:
         def subagent_turn(job: Job) -> dict[str, Any]:
             from avd.director.subagents import run_worker_turn
 
-            reply = run_worker_turn(self, job.payload["agent_id"])
+            reply = run_worker_turn(self, job.payload["agent_id"], job_id=job.id)
             return {"summary": "Sub-agent reported", "reply": reply[:2000]}
 
         registry.register("subagent_turn", subagent_turn)
+
+        def singing_model_probe(job: Job) -> dict[str, Any]:
+            from avd.performance.voice import (
+                RVCInstallation,
+                SeedVCInstallation,
+                voice_model_readiness,
+            )
+
+            captured = job.payload.get("rvc_installation")
+            installation = RVCInstallation.model_validate(captured) if captured else None
+            seed_captured = job.payload.get("seed_vc_installation")
+            seed_installation = (
+                SeedVCInstallation.model_validate(seed_captured) if seed_captured else None
+            )
+            with self.session_factory() as session:
+                result = voice_model_readiness(
+                    session,
+                    self.settings.data_dir,
+                    job.payload["version_id"],
+                    installation=installation,
+                    seed_installation=seed_installation,
+                    probe=True,
+                )
+            return {"readiness": result.model_dump(mode="json")}
+
+        registry.register("singing_model_probe", guard(singing_model_probe, project_checks=False))
         from avd.assets.sheets import make_sheet_handler
 
         registry.register("character_sheet", make_sheet_handler(self, guard(sheet_image_handler)))
@@ -227,6 +324,8 @@ class Runtime:
 
     def build_worker(self, lane: JobLane | str) -> Worker:
         """Build the production supervisor with per-job process isolation."""
+        from avd.performance.remote import verify_remote_release
+
         if self.providers or self.database is None:
             raise ValueError(
                 "Isolated workers require a persistent Runtime without injected providers; "
@@ -236,7 +335,14 @@ class Runtime:
         handler = RuntimeJobHandler(self.settings)
         job_types = {value[1] for value in JOB_TYPES.values()}
         job_types.update(
-            {"analyze_video", "write_script", "character_sheet", "director_report", "subagent_turn"}
+            {
+                "analyze_video",
+                "write_script",
+                "character_sheet",
+                "director_report",
+                "subagent_turn",
+                "singing_model_probe",
+            }
         )
         for job_type in job_types:
             registry.register(job_type, handler)
@@ -249,6 +355,7 @@ class Runtime:
             timeout_seconds=self.settings.job_timeout_seconds,
             job_timeouts=self.settings.job_timeouts,
             shutdown_grace_seconds=self.settings.worker_shutdown_grace_seconds,
+            failure_guard=verify_remote_release,
         )
 
     def check_job(self, job: Job) -> None:
@@ -277,9 +384,11 @@ class Runtime:
                 raise ValueError("Job recipe changed while queued; schedule the current recipe")
             if node is not None:
                 self.engine._consent(project, node)
-                require_review(
-                    session, project, "script" if node.kind == NodeKind.SHOT_FRAME else "frames"
-                )
+                from avd.director.review import generation_review_stage
+
+                stage = generation_review_stage(project, node.kind)
+                if stage:
+                    require_review(session, project, stage)
             estimate = float(job.payload.get("estimated_cost", 0))
             reserved = self._reserved(session, project.id, exclude=job.id)
             if (
@@ -307,9 +416,13 @@ class Runtime:
         self.queue.submit(
             "api",
             "director_report",
-            {"project_id": job.project_id, "text": text},
+            {
+                "project_id": job.project_id,
+                "text": text,
+                "llm_route": route_snapshot(self.settings, "director"),
+            },
             project_id=job.project_id,
-            model_key=self.settings.director_model,
+            model_key=self.settings.llm_route("director").model,
             max_attempts=2,
         )
 
@@ -353,8 +466,12 @@ class Runtime:
                         job_id=saved.id,
                         attempt=attempt,
                         role="character_sheet",
-                        provider="openai",
-                        model=saved.model_key or self.settings.image_model,
+                        provider=str(
+                            ((saved.payload.get("recipe") or {}).get("_execution") or {}).get(
+                                "image_provider", self.settings.image_provider
+                            )
+                        ),
+                        model=saved.model_key or self.settings.image_route()[1],
                         cost=cost,
                     )
             session.commit()

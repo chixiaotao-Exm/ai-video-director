@@ -13,6 +13,8 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
+from avd.jobs.native import observe_model_dispatch
+
 
 class ComfyUIError(RuntimeError):
     """Base class for ComfyUI client failures."""
@@ -112,6 +114,7 @@ class ComfyUIClient:
 
         if not isinstance(workflow, Mapping):
             raise TypeError("workflow must be a mapping")
+        observe_model_dispatch()
         response = self._request(
             "POST",
             "/prompt",

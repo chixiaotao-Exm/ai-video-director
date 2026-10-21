@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -26,6 +27,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from avd.api.performance import install_performance_routes
 from avd.api.security import LocalOnlyMiddleware
 from avd.api.settings_api import install_settings_routes
 from avd.api.versions_control import install_version_routes
@@ -35,9 +37,14 @@ from avd.assets.library import AssetLibrary
 from avd.assets.storage import AssetStorage
 from avd.config import Settings
 from avd.director.review import ReviewRequired, approve, approve_budget, review_status
+from avd.director.turnlock import TurnBusy
+from avd.jobs.execution import job_diagnostics
+from avd.jobs.failures import classify_failure
 from avd.jobs.models import Job, JobLane, JobStatus
 from avd.jobs.supervisor import WorkerSupervisor
 from avd.llm.budget import BudgetExceeded, ConfirmationRequired
+from avd.llm.providers import ProviderConfigurationError
+from avd.llm.providers.base import ProviderResponseError
 from avd.observability import configure_logging, log_context
 from avd.state.models import Character, Node, NodeKind, Project, Version, Voice
 from avd.state.repo import ProjectRepo
@@ -54,13 +61,69 @@ TERMINAL_STATUSES = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}
 _LOGGER = logging.getLogger(__name__)
 
 
+def _chat_failure(error: Exception) -> tuple[int, dict[str, Any]]:
+    """Describe a failed director request without echoing upstream bodies/HTML."""
+    failure = classify_failure(error)
+    code, summary = failure["code"], failure["message"]
+    upstream = failure["http_status"]
+    status = 502
+    if isinstance(error, TurnBusy):
+        status, code = 503, "director_busy"
+        summary = "导演正在处理这个项目的另一条消息，请稍后重试。"
+    elif isinstance(error, ProviderConfigurationError):
+        status, code = 503, "provider_configuration"
+        summary = "导演模型服务尚未正确配置，请检查模型、接口和 API 设置。"
+        failure["retryable"] = False
+    elif isinstance(error, ProviderResponseError) and code == "job_failed":
+        code = "invalid_provider_response"
+        summary = "导演模型服务返回了无法读取的内容，请检查模型和接口设置后重试。"
+    elif (
+        isinstance(error, (TimeoutError, httpx.TimeoutException))
+        or type(error).__name__ == "APITimeoutError"
+        or code == "timeout"
+        or upstream in {408, 504, 522, 524}
+    ):
+        status, code = 504, "timeout"
+        summary = "导演模型请求超时，请稍后重试或更换可用模型。"
+    elif (
+        isinstance(error, httpx.TransportError)
+        or type(error).__name__ == "APIConnectionError"
+        or code == "connection_failed"
+    ):
+        status, code = 503, "connection_failed"
+        summary = "暂时无法连接导演模型服务，请检查接口地址或稍后重试。"
+    elif code in {"quota_exhausted", "rate_limited"}:
+        status = 503
+    elif code in {"authentication_failed", "invalid_request"}:
+        summary = failure["message"]
+    elif upstream == 503:
+        status = 503
+        summary = "导演模型服务暂时不可用，请稍后重试。"
+    elif upstream is not None:
+        summary = (
+            failure["message"]
+            if code != "http_error"
+            else "导演模型服务请求失败，请稍后重试或检查接口设置。"
+        )
+    else:
+        status, code = 500, "director_failed"
+        summary = "导演暂时无法完成回复，请稍后重试；若持续失败，请查看服务日志。"
+    return status, {
+        "summary": summary,
+        "code": code,
+        "retryable": failure["retryable"],
+        "retry_at": failure["retry_at"],
+        "upstream_status": upstream,
+    }
+
+
 class InputModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
 class ProjectInput(InputModel):
     title: str = Field(min_length=1, max_length=255)
-    mode: Literal["remake", "anime_sequel"] = "remake"
+    mode: Literal["remake", "anime_sequel", "performance_remix"] = "remake"
     budget_limit: float | None = Field(default=0.0, ge=0, allow_inf_nan=False)
 
 
@@ -83,6 +146,8 @@ class CharacterInput(InputModel):
 class CharacterSheetInput(InputModel):
     name: str = Field(min_length=1, max_length=255)
     appearance_prompt: str = Field(min_length=1)
+    image_provider: Literal["openai", "gemini", "grok"] | None = None
+    image_model: str | None = Field(default=None, max_length=200)
 
 
 class VoiceInput(InputModel):
@@ -115,7 +180,15 @@ class RevertInput(InputModel):
 
 
 class ApprovalInput(InputModel):
-    stage: Literal["structure", "script", "frames", "final"]
+    stage: Literal[
+        "structure",
+        "script",
+        "frames",
+        "final",
+        "performance_inputs",
+        "performance_preview",
+        "performance_final",
+    ]
     approved_by: str = Field(min_length=1, max_length=255)
 
 
@@ -156,6 +229,7 @@ def _project_data(project: Project) -> dict[str, Any]:
             "mode",
             "source_video_path",
             "analysis_result",
+            "performance_config",
             "character_id",
             "voice_id",
             "budget_limit",
@@ -229,7 +303,7 @@ def _node_data(node: Node) -> dict[str, Any]:
 
 
 def _job_data(job: Job) -> dict[str, Any]:
-    return _columns(
+    result = _columns(
         job,
         (
             "id",
@@ -237,6 +311,7 @@ def _job_data(job: Job) -> dict[str, Any]:
             "node_id",
             "lane",
             "job_type",
+            "model_key",
             "status",
             "result",
             "error",
@@ -247,6 +322,8 @@ def _job_data(job: Job) -> dict[str, Any]:
             "finished_at",
         ),
     )
+    result.update(job_diagnostics(job))
+    return result
 
 
 def _safe_path(root: Path, relative: str, allowed: frozenset[str] | set[str]) -> Path:
@@ -464,6 +541,7 @@ def create_app(
 
     install_settings_routes(application, current_runtime, refresh_settings)
     install_workspace_routes(application, current_runtime)
+    install_performance_routes(application, current_runtime)
     install_worker_routes(application)
     install_version_routes(application)
 
@@ -576,6 +654,30 @@ def create_app(
     def set_source(project_id: str, relative: str) -> dict[str, Any]:
         with current_runtime().session_factory() as session:
             project = _project(session, project_id)
+            if project.mode == "performance_remix":
+                from avd.performance.graph import configure_performance
+                from avd.performance.models import PerformanceConfig
+
+                active = session.scalar(
+                    select(Job.id)
+                    .where(
+                        Job.project_id == project_id,
+                        Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
+                    )
+                    .limit(1)
+                )
+                if active:
+                    raise HTTPException(
+                        409, "Wait for or cancel active jobs before replacing the source"
+                    )
+                if project.performance_config:
+                    config = PerformanceConfig.model_validate(project.performance_config)
+                    config.preparation.source_video_path = relative
+                    configure_performance(session, project, config, media_root())
+                else:
+                    project.source_video_path = relative
+                session.commit()
+                return _project_data(project)
             project.source_video_path = relative
             project.analysis_result = None
             repo = ProjectRepo(session)
@@ -641,7 +743,11 @@ def create_app(
             return str(queued.get("job_id")) if queued.get("job_id") else None
 
         # Upload means "watch this": analysis starts at once and the director reports back.
-        result["analysis_job_id"] = await run_in_threadpool(start_analysis)
+        result["analysis_job_id"] = (
+            None
+            if result["mode"] == "performance_remix"
+            else await run_in_threadpool(start_analysis)
+        )
         return result
 
     @application.get("/media-assets")
@@ -709,9 +815,17 @@ def create_app(
         from avd.assets.sheets import submit_character_sheet
 
         ensure_project(project_id)
-        job_id = submit_character_sheet(
-            current_runtime(), project_id, body.name, body.appearance_prompt
-        )
+        try:
+            job_id = submit_character_sheet(
+                current_runtime(),
+                project_id,
+                body.name,
+                body.appearance_prompt,
+                image_provider=body.image_provider,
+                image_model=body.image_model,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
         return {"job_id": job_id, "status": "queued"}
 
     @application.post("/voices", status_code=201)
@@ -782,9 +896,39 @@ def create_app(
             attachments.append({"kind": kind, "path": path, "caption": ""})
         if not body.message.strip() and not attachments:
             raise HTTPException(422, "Send a message or a file")
-        director = DirectorAgent(current_runtime())
-        reply = director.chat(project_id, body.message, attachments=attachments)
-        return {"reply": reply, "history": director.transcript(project_id)}
+        runtime = current_runtime()
+        director = DirectorAgent(runtime)
+        selected = runtime.settings.llm_route("director")
+        route = {"role": "director", **selected.model_dump(), "source": "settings"}
+        try:
+            reply = director.chat(project_id, body.message, attachments=attachments)
+            return {"reply": reply, "history": director.transcript(project_id)}
+        except (ProviderConfigurationError, ProviderResponseError) as error:
+            status, detail = _chat_failure(error)
+        except (
+            HTTPException,
+            BudgetExceeded,
+            ConfirmationRequired,
+            ReviewRequired,
+            PermissionError,
+            ValueError,
+            LookupError,
+        ):
+            # Preserve existing client input, consent, review and budget contracts.
+            raise
+        except Exception as error:
+            status, detail = _chat_failure(error)
+        detail["route"] = route
+        _LOGGER.error(
+            "Director chat failed",
+            extra={
+                "event": "director_chat_failed",
+                "project_id": project_id,
+                "failure_code": detail["code"],
+                "upstream_status": detail["upstream_status"],
+            },
+        )
+        raise HTTPException(status, detail=public(detail)) from None
 
     @application.get("/projects/{project_id}/chat")
     def chat_history(project_id: str) -> list[dict[str, Any]]:

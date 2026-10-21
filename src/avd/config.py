@@ -10,6 +10,9 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
+from avd.performance.separation import DemucsConfig
+from avd.performance.voice import RVCInstallation, SeedVCInstallation
+
 
 def _http_base_url(value: str) -> str:
     value = value.strip().rstrip("/")
@@ -77,26 +80,35 @@ class Settings(BaseSettings):
     comfyui_profiles: dict[str, ComfyUIProfile] = Field(default_factory=_default_comfyui_profiles)
     comfyui_active_profile: str = "local"
     director_model: str = "claude-opus-5-5"
+    director_provider: Literal["openai", "anthropic", "gemini", "deepseek", "grok"] = "anthropic"
     script_model: str = "gpt-6-astra"
     qa_model: str = "gpt-6-astra"
     image_model: str = "gpt-image-2"
-    # Gemini watches whole videos; OpenAI/Anthropic receive extracted keyframes.
-    analysis_provider: Literal["openai", "anthropic", "gemini"] = "openai"
+    image_provider: Literal["openai", "gemini", "grok"] = "openai"
+    gemini_image_model: str = "gemini-3.1-flash-image"
+    grok_image_model: str = "grok-imagine-image-2.0"
+    # Native Gemini watches whole videos. Every other provider receives keyframes.
+    analysis_provider: Literal["openai", "anthropic", "gemini", "deepseek", "grok"] = "openai"
     analysis_model: str = "gpt-6-astra"
+    script_provider: Literal["openai", "anthropic", "gemini", "deepseek", "grok"] = "openai"
+    qa_provider: Literal["openai", "anthropic", "gemini", "deepseek", "grok"] = "openai"
     gemini_model: str | None = "gemini-2.5-pro"
-    subagent_provider: Literal["openai", "anthropic", "deepseek"] = "openai"
+    subagent_provider: Literal["openai", "anthropic", "deepseek", "grok"] = "openai"
     subagent_model: str = "gpt-6-astra"
     deepseek_model: str = "deepseek-v4-pro"
+    grok_model: str = "grok-4.7"
     anthropic_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
     deepseek_api_key: SecretStr | None = None
+    grok_api_key: SecretStr | None = None
     anthropic_base_url: str | None = None
     openai_base_url: str | None = None
     gemini_base_url: str | None = None
     deepseek_base_url: str | None = "https://api.deepseek.com"
+    grok_base_url: str | None = "https://api.x.ai/v1"
     web_search_enabled: bool = True
-    web_search_provider: Literal["openai", "anthropic"] = "openai"
+    web_search_provider: Literal["openai", "anthropic", "grok"] = "openai"
     web_search_model: str = "gpt-6-astra"
     ai_label: bool = False
     llm_routes: dict[str, LLMRoute] = Field(default_factory=dict)
@@ -105,6 +117,9 @@ class Settings(BaseSettings):
     default_budget_limit: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     whisper_model: str = "small"
     workflow_dir: Path | None = None
+    rvc_installation: RVCInstallation | None = None
+    seed_vc_installation: SeedVCInstallation | None = None
+    demucs_config: DemucsConfig | None = None
     job_estimated_costs: dict[str, Annotated[float, Field(ge=0, allow_inf_nan=False)]] = Field(
         default_factory=dict
     )
@@ -170,6 +185,7 @@ class Settings(BaseSettings):
         "openai_base_url",
         "gemini_base_url",
         "deepseek_base_url",
+        "grok_base_url",
         "comfyui_url",
     )
     @classmethod
@@ -203,23 +219,51 @@ class Settings(BaseSettings):
 
         return self.comfyui_profiles[self.comfyui_active_profile]
 
+    def image_route(self) -> tuple[str, str]:
+        """Return the still-image provider and the model name it should call."""
+
+        if self.image_provider == "gemini":
+            return "gemini", self.gemini_image_model
+        if self.image_provider == "grok":
+            return "grok", self.grok_image_model
+        return "openai", self.image_model
+
+    def _chat_model(self, provider: str, explicit: str) -> str | None:
+        """Use each provider's own model, except OpenAI and Anthropic which keep a role model."""
+
+        if provider == "gemini":
+            return self.gemini_model
+        if provider == "grok":
+            return self.grok_model
+        if provider == "deepseek":
+            return self.deepseek_model
+        return explicit
+
     def llm_route(self, role: str) -> LLMRoute:
         defaults = {
-            "director": LLMRoute(provider="anthropic", model=self.director_model),
-            "script": LLMRoute(provider="openai", model=self.script_model),
-            "qa": LLMRoute(provider="openai", model=self.qa_model),
+            "director": LLMRoute(
+                provider=self.director_provider,
+                model=self._chat_model(self.director_provider, self.director_model),
+            ),
+            "script": LLMRoute(
+                provider=self.script_provider,
+                model=self._chat_model(self.script_provider, self.script_model),
+            ),
+            "qa": LLMRoute(
+                provider=self.qa_provider,
+                model=self._chat_model(self.qa_provider, self.qa_model),
+            ),
             "analysis": LLMRoute(
                 provider=self.analysis_provider,
-                model=self.gemini_model
-                if self.analysis_provider == "gemini"
-                else self.analysis_model,
+                model=self._chat_model(self.analysis_provider, self.analysis_model),
             ),
             "deepseek": LLMRoute(provider="deepseek", model=self.deepseek_model),
+            "grok": LLMRoute(provider="grok", model=self.grok_model),
             "subagent": LLMRoute(provider=self.subagent_provider, model=self.subagent_model),
             "web_search": LLMRoute(
                 provider=self.web_search_provider,
-                model=self.web_search_model
-                if self.web_search_provider == "openai"
+                model=self._chat_model(self.web_search_provider, self.web_search_model)
+                if self.web_search_provider != "anthropic"
                 else self.director_model,
             ),
         }

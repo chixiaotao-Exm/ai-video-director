@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastapi import Body, FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from avd.config import LLMRoute, Settings
 from avd.llm import LLMRouter
@@ -26,22 +26,43 @@ class ConnectionTestInput(BaseModel):
 
     project_id: str | None = None
     profile: str | None = None
+    role: str | None = Field(default=None, min_length=1, max_length=64)
 
 
-PROVIDERS = ("anthropic", "openai", "gemini", "deepseek")
+PROVIDERS = ("anthropic", "openai", "gemini", "deepseek", "grok")
 
 
-def _test_model(settings: Settings, provider: str) -> str:
-    field = {
-        "anthropic": "director_model",
-        "openai": "script_model",
-        "gemini": "gemini_model",
-        "deepseek": "deepseek_model",
-    }[provider]
-    model = getattr(settings, field)
-    if not model or not str(model).strip():
-        raise HTTPException(422, "Configure a model before testing this provider")
-    return str(model)
+def _test_route(settings: Settings, provider: str, role: str | None) -> tuple[str, str | None]:
+    """Test the selected provider's effective model, including role overrides."""
+    if role is not None:
+        try:
+            route = settings.llm_route(role)
+        except ValueError:
+            raise HTTPException(422, "Select an existing model role before testing") from None
+        if route.provider != provider:
+            raise HTTPException(
+                422, "The selected role uses a different provider; save its route first"
+            )
+        if not route.model or not route.model.strip():
+            raise HTTPException(422, "Configure a model for the selected role before testing")
+        return route.model, role
+    roles = dict.fromkeys(
+        ["director", "script", "qa", "analysis", "subagent", "web_search", *settings.llm_routes]
+    )
+    for name in roles:
+        route = settings.llm_route(name)
+        if route.provider == provider and route.model and route.model.strip():
+            return route.model, name
+    # These fields belong to one provider regardless of the role routing. The
+    # legacy director/script fields can belong to any provider and are unsafe
+    # fallbacks when no effective role actually uses this endpoint.
+    field = {"gemini": "gemini_model", "deepseek": "deepseek_model", "grok": "grok_model"}.get(
+        provider
+    )
+    model = getattr(settings, field) if field else None
+    if model and str(model).strip():
+        return str(model), None
+    raise HTTPException(422, "Configure a role and model for this provider before testing")
 
 
 def _failure_detail(exc: BaseException, settings: Settings) -> str:
@@ -120,6 +141,7 @@ def install_settings_routes(
                 "openai": "https://api.openai.com/v1",
                 "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
                 "deepseek": "https://api.deepseek.com",
+                "grok": "https://api.x.ai/v1",
             }[provider]
         )
         url = f"{base}/v1/models" if provider == "anthropic" else f"{base}/models"
@@ -136,6 +158,26 @@ def install_settings_routes(
         except Exception as exc:
             return {"provider": provider, "models": [], "error": _failure_detail(exc, settings)}
         return {"provider": provider, "models": models}
+
+    @app.get("/settings/image-models")
+    def image_model_choices() -> dict[str, Any]:
+        """List still-image models the configured relays actually offer."""
+
+        from avd.llm.images import still_image_choices
+
+        settings = runtime_getter().settings
+        found: list[str] = []
+        for provider in ("openai", "gemini", "grok"):
+            secret = getattr(settings, f"{provider}_api_key")
+            if secret is None or not secret.get_secret_value():
+                continue
+            listed = list_models(provider)
+            if listed.get("models"):
+                found.extend(listed["models"])
+
+        if not found:
+            found = [settings.image_model, settings.gemini_image_model, settings.grok_image_model]
+        return {"models": still_image_choices(found)}
 
     @app.post("/settings/test/{provider}")
     def test_connection(
@@ -168,10 +210,17 @@ def install_settings_routes(
             return record(provider, True, "ComfyUI connection succeeded", name)
         if provider not in PROVIDERS:
             raise HTTPException(404, "Unknown provider")
-        model = _test_model(settings, provider)
+        model, tested_role = _test_route(settings, provider, body.role)
+        probe_tokens = (
+            256
+            if provider == "openai" and model.startswith(("gpt-6-astra", "gpt-6.1-sol"))
+            else 8
+            if body.project_id
+            else 16
+        )
         if not body.project_id:
             # A tiny unaccounted probe so keys can be checked before any project exists.
-            probe = LLMRouter(settings.model_copy(update={"llm_max_output_tokens": 16}))
+            probe = LLMRouter(settings.model_copy(update={"llm_max_output_tokens": probe_tokens}))
             if runtime.providers:
                 probe.providers = dict(runtime.providers)
             try:
@@ -184,10 +233,12 @@ def install_settings_routes(
                     False,
                     "Provider connection failed: " + _failure_detail(exc, settings),
                 )
+                result.update(model=model, role=tested_role)
                 raise HTTPException(502, result) from None
             result = record(provider, True, f"Provider connection succeeded ({model})")
             result.update(
                 model=model,
+                role=tested_role,
                 input_tokens=completion.input_tokens,
                 output_tokens=completion.output_tokens,
             )
@@ -199,7 +250,7 @@ def install_settings_routes(
             router = runtime.router(session, project)
             router.settings = settings.model_copy(
                 update={
-                    "llm_max_output_tokens": 8,
+                    "llm_max_output_tokens": probe_tokens,
                     "llm_routes": {
                         **settings.llm_routes,
                         "connection_test": LLMRoute(provider=provider, model=model),
@@ -222,6 +273,7 @@ def install_settings_routes(
                     False,
                     "Provider connection failed: " + _failure_detail(exc, settings),
                 )
+                result.update(model=model, role=tested_role)
                 raise HTTPException(502, result) from None
             session.commit()
             result = record(
@@ -230,6 +282,7 @@ def install_settings_routes(
             result.update(
                 project_id=project.id,
                 model=model,
+                role=tested_role,
                 input_tokens=completion.input_tokens,
                 output_tokens=completion.output_tokens,
             )

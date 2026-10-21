@@ -52,6 +52,78 @@ def test_default_role_routing_and_overrides() -> None:
     assert LLMRouter(custom).route("script").model == "relay-model"
 
 
+def test_gemini_relay_uses_the_openai_compatible_adapter() -> None:
+    from avd.llm.providers.gemini import GeminiProvider
+
+    relay = LLMRouter(
+        Settings(
+            _env_file=None,
+            gemini_api_key="test-key",
+            gemini_base_url="https://relay.example/v1",
+            gemini_model="gemini-test",
+        )
+    )
+    provider = relay._provider("gemini")
+    assert isinstance(provider, OpenAIProvider)
+    assert provider.label == "Gemini"
+    assert provider.base_url == "https://relay.example/v1"
+    native = LLMRouter(
+        Settings(_env_file=None, gemini_api_key="test-key", gemini_model="gemini-test")
+    )
+    assert isinstance(native._provider("gemini"), GeminiProvider)
+
+
+def test_grok_uses_the_openai_compatible_adapter() -> None:
+    settings = Settings(
+        _env_file=None,
+        grok_api_key="test-key",
+        grok_model="grok-4.7",
+        subagent_provider="grok",
+        subagent_model="grok-4.7",
+    )
+    router = LLMRouter(settings)
+    provider = router._provider("grok")
+    assert isinstance(provider, OpenAIProvider)
+    assert provider.label == "Grok"
+    assert provider.base_url == "https://api.x.ai/v1"
+    assert provider.api_key == "test-key"
+    assert router.route("grok").model == "grok-4.7"
+    assert router.route("subagent").provider == "grok"
+    assert router.route("subagent").model == "grok-4.7"
+
+
+def test_openai_roles_can_use_other_providers() -> None:
+    settings = Settings(
+        _env_file=None,
+        script_provider="grok",
+        qa_provider="deepseek",
+        analysis_provider="grok",
+        web_search_provider="grok",
+        grok_model="grok-4.7",
+        deepseek_model="deepseek-v4-pro",
+        script_model="gpt-6-astra",
+        qa_model="gpt-6-astra",
+    )
+    assert settings.llm_route("script") == LLMRoute(provider="grok", model="grok-4.7")
+    assert settings.llm_route("qa") == LLMRoute(provider="deepseek", model="deepseek-v4-pro")
+    assert settings.llm_route("analysis") == LLMRoute(provider="grok", model="grok-4.7")
+    assert settings.llm_route("web_search") == LLMRoute(provider="grok", model="grok-4.7")
+    anthropic = Settings(
+        _env_file=None,
+        script_provider="anthropic",
+        qa_provider="anthropic",
+        web_search_provider="anthropic",
+        script_model="claude-sonnet-4-6",
+        qa_model="claude-sonnet-4-6",
+        director_model="claude-opus-4-6-thinking",
+    )
+    assert anthropic.llm_route("script").model == "claude-sonnet-4-6"
+    assert anthropic.llm_route("qa").model == "claude-sonnet-4-6"
+    assert anthropic.llm_route("web_search").model == "claude-opus-4-6-thinking"
+    directed = Settings(_env_file=None, director_provider="grok", grok_model="grok-4.7")
+    assert directed.llm_route("director") == LLMRoute(provider="grok", model="grok-4.7")
+
+
 def test_environment_configures_models_and_relay(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AVD_SCRIPT_MODEL", "configured-script")
     monkeypatch.setenv("AVD_OPENAI_BASE_URL", "https://relay.invalid/v1")

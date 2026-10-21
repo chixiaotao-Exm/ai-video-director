@@ -13,7 +13,19 @@ Vue 3 创作工作室：四套可切换模板、唱跳 MV 制作方案、项目�
 
 **当前版本：0.2.0。** [版本说明](CHANGELOG.md) · [截图与验收](docs/ui/studio/README.md) · [唱跳模型选型](docs/PERFORMANCE_MODELS.md) · [GitHub 版本管理](docs/VERSION_CONTROL.md)
 
-首支唱跳样片建议先走 **Eleven Music v2.5 + Kling Motion Control + Avatar 歌唱近景**。现有显卡可尝试 ACE-Step；先验证样片再决定 GPU 投入。推荐页提供制作草案与官方证据，**这些新音乐/动作 API 还不是本仓库的生成适配器**，选择方案不会收费或开始生成。
+项目现已接入独立的 **唱跳换人换景（performance_remix）** 流程：上传唱跳参考片，选定最多 10 秒区间，复用原歌曲和动作，替换人物、歌声音色与场景。当前本地执行路线为 SeedVC 歌声转换、Wan Animate 动作视频和 FFmpeg 同步合成；需要配置并验证对应模型环境。推荐页中的其他音乐、动作 API 仍是制作方案，选择方案不会收费或开始生成。
+
+## 唱跳换人换景
+
+从侧栏进入「唱跳演出」，选择参考视频、已授权的人物和声音、歌声模型版本及场景。先确认输入，再生成完整短视频预览。原片与成片共用播放进度，可以切换原唱或成片音轨；观看后由用户确认动作、音色、口型和画面质量。
+
+- 换场景或人物只重建相关画面；调混音只重建混音和最终合成，保留已有模型产物与历史版本。
+- 任务显示请求使用的导演、图像、歌声和动作模型，并提供任务诊断与整列表复制。
+- 图像请求出现结果不明时停止自动重试；明确的内容拒绝单独报告，避免重复生成。
+- 已产出真实 10 秒技术样片；音色相似度、细节动作和口型仍需人工验收。额外口型修正需要另行配置工作流。
+- 长视频目前只支持只读分段规划，尚未提供整曲执行和跨段连续性保证。
+
+配置与阶段记录见 [唱跳接入说明](docs/performance-rvc.md) 和 [分阶段实施计划](tasks/T18-performance-remix/README.md)。
 
 ## 前端开发与验证
 
@@ -57,8 +69,8 @@ python -m pip install -e ".[llm,analysis]"
 启动配置可使用 `AVD_` 环境变量或 `.env`；浏览器设置保存到本地 settings.json 并覆盖环境层。完整变量说明见 [.env.example](.env.example)，优先级见下方“浏览器设置与本地安全”。本地凭据文件不提交 Git。
 
 - `AVD_DATA_DIR`：媒体和 SQLite 存储位置，默认 `./data`。数据库默认是该目录下的 `state.db`；可用 `AVD_DATABASE_URL` 覆盖。
-- `AVD_ANTHROPIC_API_KEY`、`AVD_OPENAI_API_KEY`、`AVD_GEMINI_API_KEY`：真实服务凭据。每家对应的 `AVD_*_BASE_URL` 支持 relay。
-- `AVD_DIRECTOR_MODEL` 默认 `claude-opus-5-5`；`AVD_SCRIPT_MODEL`/`AVD_QA_MODEL` 默认 `gpt-6.1-sol`；`AVD_IMAGE_MODEL` 默认 `gpt-image-2`。这些是规格指定的配置默认值，需确认所用服务/relay 实际提供它们。`AVD_GEMINI_MODEL` 必须显式填写。
+- `AVD_ANTHROPIC_API_KEY`、`AVD_OPENAI_API_KEY`、`AVD_GEMINI_API_KEY`、`AVD_GROK_API_KEY`：真实服务凭据。每家对应的 `AVD_*_BASE_URL` 支持 relay。Grok 使用 xAI 的 OpenAI 兼容接口，默认 `https://api.x.ai/v1`，默认模型 `grok-4.7`；用 `AVD_SUBAGENT_PROVIDER=grok` 或 `AVD_LLM_ROUTES` 选用。
+- `AVD_DIRECTOR_PROVIDER` 决定导演对话和导演报告使用哪一家，默认 `anthropic`，也可改为 `grok`、`gemini`、`deepseek` 或 `openai`。`AVD_DIRECTOR_MODEL` 默认 `claude-opus-5-5`，只在导演选 Anthropic 或 OpenAI 时使用；`AVD_SCRIPT_MODEL`/`AVD_QA_MODEL` 默认 `gpt-6.1-sol`；`AVD_IMAGE_MODEL` 默认 `gpt-image-2`。`AVD_IMAGE_PROVIDER` 可选 `openai`、`gemini`、`grok`。Gemini 用 `AVD_GEMINI_IMAGE_MODEL`（默认 `gemini-3.1-flash-image`），Grok 用 `AVD_GROK_IMAGE_MODEL`（默认 `grok-imagine-image-2.0`）。剧本和质检用 `AVD_SCRIPT_PROVIDER` / `AVD_QA_PROVIDER`，参考分析和联网搜索也可以改到 Grok 或其他已配置的模型。这些是规格指定的配置默认值，需确认所用服务/relay 实际提供它们。`AVD_GEMINI_MODEL` 必须显式填写。
 - `AVD_MODEL_PRICES`：按实际服务价格配置每百万 token 的输入/输出单价，键为 `provider/model`。未知价格会警告并以零估算，不能当作真实账单。
 - `AVD_JOB_ESTIMATED_COSTS`：图像、ComfyUI 等执行器的单任务估算，例如 `{"image_gen":0.05,"image_to_video":0.1}`。
 - `AVD_CONFIRM_THRESHOLD`：需要单独确认的金额阈值。项目预算 `0` 表示零额度，`null` 表示不限额；实际费用写入账本。
@@ -112,7 +124,7 @@ avd serve --no-workers
 3. 填写创作简报并生成脚本/分镜。**检查点 1：批准脚本。**
 4. 生成首帧，在镜头网格检查角色与构图。**检查点 2：批准首帧。**
 5. 执行重建，依次完成视频、配音、唇形、字幕和最终合成。**检查点 3：审阅最终视频。**最终产物带可见 AI-generated 标识及元数据。
-6. 在聊天中要求修改台词、情绪、画面、运镜或时长。只影响相应链路；旧版本可选择回退，媒体文件不会被覆盖。
+6. 在聊天中要求修改台词、情绪、画面、运镜或时长。只影响相应链路；旧版本可选择回退，媒体文件不会被覆盖。导演和干活的子Agent可以互相发消息：子Agent提问后等待，导演回复后对话继续。子Agent之间、以及子Agent和用户之间不直接对话。
 
 批准绑定具体版本；修改后过期批准需要重新确认。预算确认用页面的金额确认表单，不能由模型自行授权。需要增减镜头数量时新建项目；当前支持同数量分镜重写及单镜头字段修改。
 

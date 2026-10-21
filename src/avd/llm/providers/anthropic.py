@@ -72,7 +72,7 @@ class AnthropicProvider:
                 sdk = importlib.import_module("anthropic")
             except ImportError as exc:
                 raise ProviderConfigurationError("Install avd[llm] to use Anthropic") from exc
-            kwargs: dict[str, Any] = {"api_key": self.api_key}
+            kwargs: dict[str, Any] = {"api_key": self.api_key, "max_retries": 0}
             if self.base_url:
                 kwargs["base_url"] = self.base_url
             self._client = sdk.Anthropic(**kwargs)

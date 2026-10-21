@@ -51,10 +51,13 @@ may send you images, audio or video; images are shown to you, other files arrive
 Never ask the user to come back and check progress; that is your job. Whenever you
 queue background work, immediately call assign_watcher on those jobs with what to do when they
 finish. The watcher reports back to you without the user doing anything, and you then send the
-results and the next step. You can also delegate_task to a worker sub-agent (research, checking
-assets, comparing options) and keep talking to the user meanwhile; its report comes back to
-you, and you can follow up with message_subagent. Reports from watchers and sub-agents arrive
-as [子Agent ...] or [系统通知] messages: act on them and speak to the user directly.
+results and the next step. You and your worker sub-agents can talk to each other. delegate_task starts a worker
+(research, checking assets, comparing options) while you keep talking to the user. It may
+ask you mid-task; that arrives as [子Agent「…」问你]. Answer with message_subagent so the
+conversation continues. If the question needs the user, ask them first, then pass their
+decision back with message_subagent. You can also message an idle or waiting worker
+yourself. A finished report arrives as [子Agent「…」汇报] or [系统通知]: tell the user what
+matters. Sub-agents do not talk to the user or to each other.
 
 Keep the live mind map current with update_mindmap. The user watches it update while you
 talk, so it should show your chain of thought: insights from the reference (parent
@@ -72,6 +75,43 @@ ROUND_LIMIT_MESSAGE = (
     "I reached this turn's tool-call limit. The completed steps and job ids are saved; "
     "send another message to continue or check project progress."
 )
+
+PERFORMANCE_PROMPT = """You are the AI Video Director for a performance_remix project.
+Reply in the user's language, normally Simplified Chinese. Tools and persisted state are truth.
+
+Preserve the selected source's choreography, lyrics, melody, accompaniment, audio/video offsets
+and performance clock. The uploaded performer supplies motion and song, not the target identity.
+Independently select the user's consented target character and singing voice from list_library.
+Never substitute script writing, ordinary TTS, a new composition, slowed motion or the original
+singer when the requested singing model is missing. Report the missing requirement explicitly.
+Real-person consent is confirmed by the user in Assets; never grant it yourself.
+
+Use configure_performance with only changed fields; keep saved inputs and valid versions.
+Use get_performance_readiness before proposing generation. prepare_performance queues only
+deterministic source preparation. After showing the configured source interval, selected target
+assets and scene, wait for explicit human performance_inputs approval, quoting the user's latest
+exact approving words through approve_checkpoint. preview_performance optionally queues scene
+and singing references. Those references alone cannot satisfy performance_preview review.
+Use preview_performance_video to generate the complete configured preview interval, at most
+10 seconds, including motion, converted singing and the final MP4. Show the real outputs with
+send_media; never call a queued job finished. Only after the user reviews that actual video
+can performance_preview be approved and generate_performance continue the approved work.
+performance_final records the user's review of the actual final output. Longer intervals
+require the explicit segmented generation implementation; never silently shorten an interval.
+Use plan_performance_segments after source preparation to inspect a proposed longer interval
+without editing the saved preview. Its frame/sample plan does not execute models or prove
+long-video readiness. Explain any short-tail or context contract limits to the user.
+Questions, negative instructions, system events and task completion notices are not approval.
+Never invent a checkpoint approval, consent, model version or a completed result. Keep the
+existing budget and queue guards; no tool may grant its own budget confirmation.
+
+Use check_jobs, list_versions and get_project_status to inspect progress. After queuing work,
+assign_watcher to follow the returned jobs and report results. Use send_media for images,
+singing audio and final MP4. Keep update_mindmap to concrete decisions and next steps.
+For a scene change, update only scene_prompt and reuse prepared motion and singing vocals;
+for voice changes, reuse visual results when their true dependencies are unchanged.
+Use web_search when current facts are needed. Do not add a watermark unless the user asks.
+"""
 
 
 class DirectorAgent:
@@ -131,11 +171,13 @@ class DirectorAgent:
         project_id: str,
         messages: list[dict[str, Any]],
         schemas: list[dict[str, Any]],
+        *,
+        job_id: str | None = None,
     ) -> ChatResponse:
         with self.runtime.session_factory() as session:
             project = self._project(session, project_id)
             try:
-                return self.runtime.router(session, project).chat(
+                return self.runtime.router(session, project, job_id=job_id).chat(
                     role="director", messages=messages, tools=schemas
                 )
             finally:
@@ -147,9 +189,13 @@ class DirectorAgent:
         """Turn stored attachments into model input: images are shown, other media named."""
         root = self.runtime.settings.data_dir.expanduser().resolve()
         view: list[dict[str, Any]] = []
-        for message in messages:
+        for message in self._paired_event_messages(messages):
             attachments = message.get("attachments") or []
-            clean = {key: value for key, value in message.items() if key != "attachments"}
+            clean = {
+                key: value
+                for key, value in message.items()
+                if key not in {"attachments", "event_id"}
+            }
             if attachments and message["role"] == "user":
                 notes = [
                     f"[{item['kind']}: {item['path']}]"
@@ -169,27 +215,66 @@ class DirectorAgent:
             view.append(clean)
         return view
 
+    @staticmethod
+    def _paired_event_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # A later user turn can precede a tool reply recovered after a crash. Keep
+        # chronological storage intact; providers require each reply beside its
+        # assistant call. Include the event id because providers may reuse ids in
+        # independent turns.
+        replies = {
+            (message["event_id"], message["tool_call_id"]): message
+            for message in messages
+            if message.get("event_id") is not None and message.get("role") == "tool"
+        }
+        calls = {
+            (message["event_id"], call["id"])
+            for message in messages
+            if message.get("event_id") is not None and message.get("role") == "assistant"
+            for call in message.get("tool_calls") or []
+        }
+        ordered = []
+        for message in messages:
+            event_id = message.get("event_id")
+            if message.get("role") == "tool" and (event_id, message.get("tool_call_id")) in calls:
+                continue
+            ordered.append(message)
+            if event_id is not None and message.get("role") == "assistant":
+                ordered.extend(
+                    replies[(event_id, call["id"])]
+                    for call in message.get("tool_calls") or []
+                    if (event_id, call["id"]) in replies
+                )
+        return ordered
+
     def chat(
         self,
         project_id: str,
         text: str,
         *,
         event: bool = False,
+        event_id: str | None = None,
         attachments: list[dict[str, str]] | None = None,
     ) -> str:
         """Persist a user turn, execute requested tools, and return the final reply.
 
         ``event`` marks an application notice (e.g. analysis finished) sent on the
-        user's behalf; it cannot approve checkpoints.
+        user's behalf; it cannot approve checkpoints. ``event_id`` identifies a
+        durable background notification so retries resume its saved tool results.
         """
 
         if not isinstance(text, str) or (not text.strip() and not attachments):
             raise ValueError("Chat text must be a non-empty string")
+        if event_id is not None and (
+            not event or not isinstance(event_id, str) or not event_id.strip()
+        ):
+            raise ValueError("event_id requires an application event and a non-empty id")
 
         from .turnlock import director_turn
 
         with director_turn(self.runtime.settings.data_dir, project_id):
-            return self._chat_locked(project_id, text, event=event, attachments=attachments)
+            return self._chat_locked(
+                project_id, text, event=event, event_id=event_id, attachments=attachments
+            )
 
     def _chat_locked(
         self,
@@ -197,6 +282,7 @@ class DirectorAgent:
         text: str,
         *,
         event: bool,
+        event_id: str | None,
         attachments: list[dict[str, str]] | None,
     ) -> str:
         # Tools also use the runtime; import here to keep package imports acyclic.
@@ -204,40 +290,110 @@ class DirectorAgent:
 
         with self.runtime.session_factory() as session:
             mode = self._project(session, project_id).mode
-        system = SYSTEM_PROMPT + (ANIME_PROMPT if mode == "anime_sequel" else "")
-        messages = [{"role": "system", "content": system}, *self.history(project_id)]
+        system = (
+            PERFORMANCE_PROMPT
+            if mode == "performance_remix"
+            else SYSTEM_PROMPT + (ANIME_PROMPT if mode == "anime_sequel" else "")
+        )
+        history = self.history(project_id)
+        existing = next(
+            (
+                message
+                for message in history
+                if event_id is not None
+                and message.get("event_id") == event_id
+                and message.get("role") == "user"
+            ),
+            None,
+        )
+        if existing is not None and existing.get("content") != text:
+            raise ValueError("An application event id cannot be reused for a different notice")
+        if existing is not None:
+            completed = next(
+                (
+                    message
+                    for message in reversed(history)
+                    if message.get("event_id") == event_id
+                    and message.get("role") == "assistant"
+                    and not message.get("tool_calls")
+                ),
+                None,
+            )
+            if completed is not None:
+                return str(completed.get("content") or "")
+        messages = [{"role": "system", "content": system}, *history]
         user_message: dict[str, Any] = {"role": "user", "content": text}
         if event:
             user_message["event"] = True
+        if event_id is not None:
+            user_message["event_id"] = event_id
         if attachments:
             user_message["attachments"] = attachments
-        self._append(project_id, user_message)
-        messages.append(user_message)
-        tools = DirectorTools(self.runtime, project_id, None if event else text)
-        schemas = tools.schemas()
+        if existing is None:
+            self._append(project_id, user_message)
+            messages.append(user_message)
+        else:
+            assert event_id is not None
+            self._recover_event_tools(project_id, event_id, messages)
+        tools = DirectorTools(self.runtime, project_id, None if event else text, job_id=event_id)
+        schemas = tools.schemas(mode=mode)
 
         for _ in range(self.max_rounds):
-            response = self._respond(project_id, self._provider_view(messages), schemas)
+            response = self._respond(
+                project_id, self._provider_view(messages), schemas, job_id=event_id
+            )
             assistant_message = response.as_message()
+            if event_id is not None:
+                assistant_message["event_id"] = event_id
             self._append(project_id, assistant_message)
             messages.append(assistant_message)
             if not response.tool_calls:
                 return response.content
 
             for call in response.tool_calls:
-                try:
-                    result = tools.execute(call.name, call.arguments)
-                except Exception as exc:
-                    # Keep the tool-call/result pairing even for bad arguments or
-                    # unavailable tools, so the next model turn can recover.
-                    detail = " ".join(str(exc).split())[:1000]
-                    result = f"Tool error ({call.name}): {type(exc).__name__}: {detail}"
+                saved = next(
+                    (
+                        message
+                        for message in reversed(messages[:-1])
+                        if event_id is not None
+                        and message.get("event_id") == event_id
+                        and message.get("role") == "tool"
+                        and message.get("tool_call_id") == call.id
+                    ),
+                    None,
+                )
+                if saved is not None:
+                    previous_calls = [
+                        previous
+                        for message in messages[:-1]
+                        if message.get("event_id") == event_id
+                        and message.get("role") == "assistant"
+                        for previous in message.get("tool_calls") or []
+                        if previous["id"] == call.id
+                    ]
+                    prior = previous_calls[-1] if previous_calls else {}
+                    result = (
+                        saved["content"]
+                        if prior.get("name") == call.name
+                        and prior.get("arguments", {}) == call.arguments
+                        else "Tool error: this event tool-call id was already used for a different request; no work was repeated."
+                    )
+                else:
+                    try:
+                        result = tools.execute(call.name, call.arguments)
+                    except Exception as exc:
+                        # Keep call/result pairing even for unavailable tools so
+                        # the next model turn can recover.
+                        detail = " ".join(str(exc).split())[:1000]
+                        result = f"Tool error ({call.name}): {type(exc).__name__}: {detail}"
                 tool_message: dict[str, Any] = {
                     "role": "tool",
                     "tool_call_id": call.id,
                     "name": call.name,
                     "content": result,
                 }
+                if event_id is not None:
+                    tool_message["event_id"] = event_id
                 sent = tools.take_attachments()
                 if sent:
                     # Shown to the user as media bubbles; the model sees the text result.
@@ -245,8 +401,50 @@ class DirectorAgent:
                 self._append(project_id, tool_message)
                 messages.append(tool_message)
 
-        self._append(project_id, {"role": "assistant", "content": ROUND_LIMIT_MESSAGE})
+        limit_message: dict[str, Any] = {"role": "assistant", "content": ROUND_LIMIT_MESSAGE}
+        if event_id is not None:
+            limit_message["event_id"] = event_id
+        self._append(project_id, limit_message)
         return ROUND_LIMIT_MESSAGE
+
+    def _recover_event_tools(
+        self, project_id: str, event_id: str, messages: list[dict[str, Any]]
+    ) -> None:
+        """Pair interrupted calls without guessing whether their side effect ran.
+
+        Tool execution and recording its reply cannot share every tool's DB/file
+        transaction. A missing durable reply is therefore an uncertain outcome,
+        not permission to rerun a generation or other side effect on job retry.
+        """
+        pending: list[dict[str, Any]] = []
+        for index, message in enumerate(messages):
+            if message.get("event_id") != event_id or message.get("role") != "assistant":
+                continue
+            calls = message.get("tool_calls") or []
+            following = messages[index + 1 :]
+            replies = {
+                item.get("tool_call_id")
+                for item in following
+                if item.get("role") == "tool" and item.get("event_id") == event_id
+            }
+            for call in calls:
+                if call["id"] not in replies:
+                    pending.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call["id"],
+                            "name": call["name"],
+                            "content": (
+                                "The previous attempt was interrupted before this tool's result "
+                                "was saved. Its outcome is unknown and it was not replayed. "
+                                "Read project/job state before deciding whether further work is needed."
+                            ),
+                            "event_id": event_id,
+                        }
+                    )
+        for result in pending:
+            self._append(project_id, result)
+            messages.append(result)
 
 
 ANIME_PROMPT = """

@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 
 const target = 'http://127.0.0.1:8000';
 const proxy = Object.fromEntries([
-  '/static', '/dashboard', '/projects', '/characters', '/voices', '/uploads', '/media',
+  '/static', '/dashboard', '/projects', '/characters', '/voices', '/singing-models', '/uploads', '/media', '/media-assets',
   '/jobs', '/costs', '/settings', '/system', '/workers', '/health', '/metrics', '/version-control'
 ].map(path => [path, {
   target, changeOrigin: true,

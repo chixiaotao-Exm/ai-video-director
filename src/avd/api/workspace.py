@@ -20,8 +20,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from avd.director.review import ReviewRequired, budget_is_confirmed, require_review
+from avd.director.review import (
+    ReviewRequired,
+    budget_is_confirmed,
+    generation_review_stage,
+    require_review,
+)
 from avd.engine.rebuild import JOB_TYPES, _hash
+from avd.jobs.execution import job_diagnostics, route_snapshot
 from avd.jobs.models import Job, JobLane, JobStatus
 from avd.llm.budget import (
     BudgetExceeded,
@@ -32,6 +38,7 @@ from avd.llm.budget import (
 from avd.llm.ledger import CostEntry
 from avd.llm.reservations import reserved_cost
 from avd.observability import ContextFormatter
+from avd.settings_store import SECRET_FIELDS
 from avd.state.consent import require_usable
 from avd.state.models import Node, NodeKind, NodeStatus, Project
 from avd.state.paths import relative_path
@@ -58,8 +65,8 @@ class RegenerateInput(BaseModel):
 
 def _redact(value: str, settings: Settings) -> str:
     """Never expose credentials in diagnostic messages, including previous keys."""
-    for provider in ("anthropic", "openai", "gemini"):
-        secret = getattr(settings, f"{provider}_api_key", None)
+    for field in SECRET_FIELDS:
+        secret = getattr(settings, field, None)
         if secret is not None and secret.get_secret_value():
             value = value.replace(secret.get_secret_value(), "[REDACTED]")
     value = re.sub(r"(?i)\bBearer\s+[^\s,;\"']+", "Bearer [REDACTED]", value)
@@ -204,6 +211,7 @@ def _job_data(job: Job, project: Project | None, settings: Settings) -> dict[str
     }
     result["project_title"] = project.title if project else None
     result["error"] = _redact(job.error, settings)[:8000] if job.error else None
+    result.update(redact_public(job_diagnostics(job), settings))
     duration = None
     if job.started_at is not None:
         started = job.started_at.replace(tzinfo=job.started_at.tzinfo or timezone.utc)
@@ -259,7 +267,9 @@ def _retry_preflight(runtime: Runtime, session: Session, job: Job, project: Proj
         ):
             raise HTTPException(409, "Job recipe is stale; rebuild the current project recipe")
         runtime.engine._consent(project, node)
-        require_review(session, project, "script" if node.kind == NodeKind.SHOT_FRAME else "frames")
+        stage = generation_review_stage(project, node.kind)
+        if stage:
+            require_review(session, project, stage)
     elif job.job_type == "write_script":
         require_review(session, project, "structure")
         if project.character is None or project.voice is None:
@@ -269,7 +279,7 @@ def _retry_preflight(runtime: Runtime, session: Session, job: Job, project: Proj
     elif job.job_type == "analyze_video":
         if not project.source_video_path:
             raise HTTPException(409, "Upload a source video before retrying analysis")
-    elif job.job_type != "character_sheet":
+    elif job.job_type not in {"character_sheet", "director_report"}:
         raise HTTPException(409, "This job type cannot be retried from the browser")
     duplicate = select(Job.id).where(
         Job.id != job.id,
@@ -404,6 +414,12 @@ def install_workspace_routes(application: FastAPI, current_runtime: Callable[[],
             # Keep attempt numbers and paid markers: previous work retains its cost,
             # and the next attempt writes to a fresh attempt-specific directory.
             job.status = JobStatus.QUEUED
+            if job.job_type == "director_report":
+                job.model_key = runtime.settings.llm_route("director").model
+                job.payload = {
+                    **job.payload,
+                    "llm_route": route_snapshot(runtime.settings, "director"),
+                }
             job.max_attempts = job.attempts + 3
             job.error = None
             job.result = None

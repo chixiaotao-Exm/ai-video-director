@@ -89,6 +89,8 @@ class ProjectRepo:
 
         require_usable(character)
         require_usable(voice)
+        if project.mode == "performance_remix" and project.performance_config:
+            raise ValueError("Update performance inputs to change the character or singing voice")
         character_changed = project.character_id != character.id
         voice_changed = project.voice_id != voice.id
         project.character = character

@@ -11,6 +11,7 @@ from typing import Any
 
 from avd.observability import log_context
 
+from .failures import classify_failure
 from .models import Job, JobLane
 from .process import JobRunner, ProcessCleanupError
 from .queue import ClaimLostError, JobQueue
@@ -46,6 +47,7 @@ class Worker:
         timeout_seconds: float | None = None,
         job_timeouts: Mapping[str, float] | None = None,
         shutdown_grace_seconds: float = 30.0,
+        failure_guard: Callable[[Job], None] | None = None,
     ) -> None:
         timeouts = dict(job_timeouts or {})
         for value in [
@@ -67,6 +69,7 @@ class Worker:
         self.timeout_seconds = timeout_seconds
         self.job_timeouts = timeouts
         self.shutdown_grace_seconds = shutdown_grace_seconds
+        self.failure_guard = failure_guard
         self.last_model_key: str | None = None
 
     def register(self, job_type: str, handler: JobHandler) -> None:
@@ -129,17 +132,7 @@ class Worker:
         heartbeat.start()
         try:
             try:
-                if self.runner is None:
-                    result = handler(job)
-                else:
-                    assert self.timeout_seconds is not None
-                    result = self.runner.run(
-                        handler,
-                        job,
-                        timeout=self.job_timeouts.get(job.job_type, self.timeout_seconds),
-                        stop_event=stop_event,
-                        shutdown_grace=self.shutdown_grace_seconds,
-                    )
+                result = self._run_handler(handler, job, stop_event)
             except ProcessCleanupError as exc:
                 # Do not let heartbeat overwrite the permanent quarantine lease.
                 stop_heartbeat.set()
@@ -152,7 +145,13 @@ class Worker:
                 )
                 raise
             except Exception:
-                finished = self.queue.fail(job.id, traceback.format_exc(), claim_token=claim_token)
+                error = traceback.format_exc()
+                finished = self.queue.fail(
+                    job.id,
+                    error,
+                    retry=classify_failure(error)["retryable"],
+                    claim_token=claim_token,
+                )
             else:
                 finished = self.queue.complete(job.id, result, claim_token=claim_token)
         except ClaimLostError:
@@ -164,6 +163,34 @@ class Worker:
         self._notify(finished)
         self._log_finished(finished)
         return True
+
+    def _run_handler(
+        self, handler: JobHandler, job: Job, stop_event: threading.Event | None
+    ) -> dict[str, Any]:
+        try:
+            if self.runner is None:
+                return handler(job)
+            assert self.timeout_seconds is not None
+            return self.runner.run(
+                handler,
+                job,
+                timeout=self.job_timeouts.get(job.job_type, self.timeout_seconds),
+                stop_event=stop_event,
+                shutdown_grace=self.shutdown_grace_seconds,
+            )
+        except ProcessCleanupError:
+            raise
+        except Exception:
+            if self.failure_guard is not None:
+                try:
+                    self.failure_guard(job)
+                except ProcessCleanupError:
+                    raise
+                except Exception as exc:
+                    raise ProcessCleanupError(
+                        f"Job release verification failed; manual recovery required: {exc}"
+                    ) from exc
+            raise
 
     def _log_finished(self, job: Job) -> None:
         _LOGGER.info(

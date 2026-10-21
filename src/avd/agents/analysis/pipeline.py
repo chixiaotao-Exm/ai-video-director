@@ -14,8 +14,9 @@ from typing import Any
 
 from sqlalchemy import select
 
-from avd.config import Settings
+from avd.config import LLMRoute, Settings
 from avd.llm import CostLedger, LLMRouter
+from avd.llm.router import gemini_uses_openai_compat
 from avd.state.models import Node, NodeKind, Project
 from avd.state.paths import relative_path
 from avd.state.repo import ProjectRepo
@@ -62,7 +63,12 @@ def understand(
     }
     media: list[dict[str, Any]]
     frames_dir: Path | None = None
-    if router.route("analysis").provider == "gemini":
+    # A Gemini relay whose address ends in /v1 speaks Chat Completions and cannot
+    # accept a native video upload. Keyframes match the other chat providers.
+    native_gemini = router.route("analysis").provider == "gemini" and not gemini_uses_openai_compat(
+        router.settings.gemini_base_url
+    )
+    if native_gemini:
         media = [
             {
                 "type": "video",
@@ -144,6 +150,7 @@ class AnalysisPipeline:
         extract_audio_step: Callable[..., Path] | None = None,
         transcribe_step: Callable[..., list[Segment]] | None = None,
         understand_step: Callable[..., StructureTemplate] | None = None,
+        execution_observer: Callable[[str, LLMRoute], None] | None = None,
     ) -> None:
         self.repo = repo
         self.settings = settings or Settings()
@@ -156,6 +163,7 @@ class AnalysisPipeline:
         self.extract_audio_step = extract_audio_step
         self.transcribe_step = transcribe_step
         self.understand_step = understand_step or understand
+        self.execution_observer = execution_observer
 
     def _source(self, project: Project) -> Path:
         if not project.source_video_path:
@@ -193,6 +201,10 @@ class AnalysisPipeline:
             audio = Path(audio).resolve()
             if not audio.is_relative_to(run_dir):
                 raise ValueError("Extracted audio must stay in the current analysis run")
+            if self.execution_observer is not None:
+                self.execution_observer(
+                    "whisper", LLMRoute(provider="local", model=self.settings.whisper_model)
+                )
             transcript = (self.transcribe_step or transcribe)(
                 audio, model_size=self.settings.whisper_model
             )

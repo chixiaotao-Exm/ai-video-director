@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path, PureWindowsPath
 from typing import Any, Literal, Self
 
@@ -14,9 +15,11 @@ from avd.agents.script import update_shot
 from avd.assets.library import AssetLibrary
 from avd.assets.storage import AssetStorage
 from avd.engine.rebuild import JOB_TYPES
+from avd.jobs.execution import route_snapshot
 from avd.jobs.models import Job, JobStatus
 from avd.llm.budget import BudgetExceeded, BudgetGuard, acquire_project_budget
 from avd.llm.reservations import reserved_cost
+from avd.performance.service import PerformanceConfigPatch, PerformanceService
 from avd.state.consent import require_usable
 from avd.state.models import Node, NodeKind, Project
 from avd.state.repo import ProjectRepo
@@ -159,7 +162,15 @@ class MindMapInput(ToolInput):
 
 
 class ApproveInput(ToolInput):
-    stage: Literal["structure", "script", "frames", "final"]
+    stage: Literal[
+        "structure",
+        "script",
+        "frames",
+        "final",
+        "performance_inputs",
+        "performance_preview",
+        "performance_final",
+    ]
     user_quote: str = Field(
         min_length=1,
         max_length=500,
@@ -167,7 +178,46 @@ class ApproveInput(ToolInput):
     )
 
 
+class ConfigurePerformanceInput(ToolInput):
+    changes: PerformanceConfigPatch = Field(
+        description="Only changed fields. Initial configuration requires source interval, target character/voice and scene."
+    )
+
+
+class PlanPerformanceInput(ToolInput):
+    duration_s: float = Field(gt=0, strict=True)
+    context_frames: int = Field(default=0, ge=0, strict=True)
+
+
 _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
+    "configure_performance": (
+        ConfigurePerformanceInput,
+        "Save partial performance_remix inputs: preserve the source song and choreography, select target identity/voice and scene. Never grant consent or approval.",
+    ),
+    "get_performance_readiness": (
+        EmptyInput,
+        "Inspect performance_remix source, singing model and motion workflow readiness without generating.",
+    ),
+    "prepare_performance": (
+        EmptyInput,
+        "Queue deterministic source motion/audio preparation for performance_remix; no model generation.",
+    ),
+    "preview_performance": (
+        EmptyInput,
+        "Queue scene and singing references after human performance_inputs review. These are not a video preview and cannot approve performance_preview; never use TTS.",
+    ),
+    "preview_performance_video": (
+        EmptyInput,
+        "Queue the complete performance_remix video preview, including motion, converted singing and final MP4, after human performance_inputs review. Requires a configured interval of at most 10 seconds and ready workflows.",
+    ),
+    "plan_performance_segments": (
+        PlanPerformanceInput,
+        "Inspect a proposed longer source interval from the saved start using the current preparation and frozen native motion clock. Returns exact frame/sample segments and contract limits; does not alter the saved preview, queue models, approve quality or enable full-length execution.",
+    ),
+    "generate_performance": (
+        EmptyInput,
+        "Queue performance_remix motion and final video after human performance_preview approval and model readiness.",
+    ),
     "analyze_video": (
         EmptyInput,
         "Queue analysis of the uploaded reference video; return a job ID.",
@@ -227,11 +277,14 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
     "delegate_task": (
         DelegateInput,
         "Hand a task to a worker sub-agent with its own model and read-only tools (web "
-        "search, project status, jobs, library). It reports back to you when done.",
+        "search, project status, jobs, library). It can message you while it works, and you "
+        "reply with message_subagent. It reports back when the task is done.",
     ),
     "message_subagent": (
         SubAgentMessageInput,
-        "Send a follow-up message to a worker sub-agent; its answer comes back as a report.",
+        "Reply to a worker sub-agent or continue the conversation. Use this when it is "
+        "waiting on you, or to follow up after it has reported. Its next answer comes back "
+        "as a report or another question.",
     ),
     "list_subagents": (EmptyInput, "List this project's sub-agents with status and results."),
     "stop_subagent": (SubAgentRefInput, "Stop a sub-agent that is no longer needed."),
@@ -244,7 +297,7 @@ _TOOLS: dict[str, tuple[type[ToolInput], str]] = {
     ),
     "approve_checkpoint": (
         ApproveInput,
-        "Record the user's approval of a checkpoint (structure, script, frames, final) ONLY "
+        "Record the user's approval of a checkpoint for this project mode ONLY "
         "when their latest message clearly approves it; quote their exact words.",
     ),
 }
@@ -257,6 +310,46 @@ _GENERATORS = {
     "build_subtitles": NodeKind.SUBTITLES,
     "render_final": NodeKind.FINAL,
 }
+
+_PERFORMANCE_OPERATIONS = {
+    "get_performance_readiness": "readiness",
+    "prepare_performance": "prepare",
+    "preview_performance": "preview",
+    "preview_performance_video": "video_preview",
+    "generate_performance": "generate",
+}
+
+_LEGACY_AUTHORING_TOOLS = {
+    "analyze_video",
+    "write_script",
+    "update_shot",
+    "generate_frames",
+    "generate_videos",
+    "generate_voiceover",
+    "run_lipsync",
+    "build_subtitles",
+    "render_final",
+    "rebuild",
+}
+
+
+def _explicit_performance_approval(latest: str, quote: str) -> bool:
+    clauses = [part for part in re.split(r"[，,。;；!！\n]", latest) if quote in part]
+    context = clauses[0] if clauses else latest
+    if re.search(
+        r"[?？]|吗|是否|能不能|不|没|别|暂缓|取消|等待|等一下|\b(?:not|no|don't|wait|hold)\b",
+        context,
+        re.I,
+    ):
+        return False
+    return (
+        re.search(
+            r"同意|确认|通过|批准|开始|可以|继续|就这样|\b(?:approve[ds]?|yes|proceed|start|ok(?:ay)?|go ahead|looks good)\b",
+            quote,
+            re.I,
+        )
+        is not None
+    )
 
 
 _MEDIA_KINDS = {
@@ -286,11 +379,17 @@ def project_node(session: Session, project: Project, node_id: str) -> Node:
 
 class DirectorTools:
     def __init__(
-        self, runtime: Any, project_id: str, latest_user_message: str | None = None
+        self,
+        runtime: Any,
+        project_id: str,
+        latest_user_message: str | None = None,
+        *,
+        job_id: str | None = None,
     ) -> None:
         self.runtime = runtime
         self.project_id = project_id
         self.latest_user_message = latest_user_message
+        self.job_id = job_id
         self._attachments: list[dict[str, str]] = []
 
     def take_attachments(self) -> list[dict[str, str]]:
@@ -298,10 +397,20 @@ class DirectorTools:
         return sent
 
     @staticmethod
-    def schemas() -> list[dict[str, Any]]:
+    def schemas(mode: str | None = None) -> list[dict[str, Any]]:
+        performance = {
+            *_PERFORMANCE_OPERATIONS,
+            "configure_performance",
+            "plan_performance_segments",
+        }
         return [
             {"name": name, "description": description, "input_schema": schema.model_json_schema()}
             for name, (schema, description) in _TOOLS.items()
+            if (
+                name not in _LEGACY_AUTHORING_TOOLS
+                if mode == "performance_remix"
+                else name not in performance
+            )
         ]
 
     def _project(self, session: Session) -> Project:
@@ -346,6 +455,28 @@ class DirectorTools:
         if name not in _TOOLS:
             raise ValueError(f"Unknown director tool: {name}")
         parsed = _TOOLS[name][0].model_validate(args)
+        if name == "configure_performance":
+            assert isinstance(parsed, ConfigurePerformanceInput)
+            return _summary(
+                PerformanceService(self.runtime).configure(self.project_id, parsed.changes)
+            )
+        if name == "plan_performance_segments":
+            assert isinstance(parsed, PlanPerformanceInput)
+            return _summary(
+                PerformanceService(self.runtime).segment_plan(
+                    self.project_id, parsed.model_dump(mode="json")
+                )
+            )
+        if name in _PERFORMANCE_OPERATIONS:
+            operation = getattr(PerformanceService(self.runtime), _PERFORMANCE_OPERATIONS[name])
+            return _summary(operation(self.project_id))
+        if name in _LEGACY_AUTHORING_TOOLS:
+            with self.runtime.session_factory() as session:
+                if self._project(session).mode == "performance_remix":
+                    raise ValueError(
+                        "Use the independent performance inputs and jobs for performance_remix; "
+                        "script/TTS tools are unavailable in this mode"
+                    )
         if (
             name == "create_character"
             and isinstance(parsed, CharacterInput)
@@ -370,7 +501,7 @@ class DirectorTools:
             with self.runtime.session_factory() as session:
                 project = self._project(session)
                 try:
-                    found = self.runtime.router(session, project).search(
+                    found = self.runtime.router(session, project, job_id=self.job_id).search(
                         parsed.query, project=project
                     )
                 finally:
@@ -519,6 +650,12 @@ class DirectorTools:
                 )
             with self.runtime.session_factory() as session:
                 project = self._project(session)
+                if project.mode == "performance_remix" and not _explicit_performance_approval(
+                    latest, quote
+                ):
+                    raise ReviewRequired(
+                        "The user's latest message does not explicitly approve this performance checkpoint"
+                    )
                 approval = approve(
                     session, project, parsed.stage, approved_by=f"chat: {quote}"[:255]
                 )
@@ -598,6 +735,8 @@ class DirectorTools:
             elif name == "get_project_status":
                 result = {
                     "project_id": project.id,
+                    "mode": project.mode,
+                    "performance_config": project.performance_config,
                     "title": project.title,
                     "source_video": project.source_video_path,
                     "analysis": project.analysis_result,
@@ -684,7 +823,9 @@ class DirectorTools:
             if agent.kind != "worker":
                 raise ValueError("Only worker sub-agents can be messaged")
             if agent.status == "working":
-                raise ValueError("That sub-agent is still working; wait for its report")
+                raise ValueError("That sub-agent is still working; wait until it asks or reports")
+            if agent.status == "stopped":
+                raise ValueError("That sub-agent is stopped")
             job_id = subagents.submit_worker_turn(self.runtime, session, agent, parsed.message)
             session.commit()
             return _summary({"agent_id": agent.id, "job_id": job_id, "status": "working"})
@@ -720,7 +861,11 @@ class DirectorTools:
             and project.spent + reserved + estimate > project.budget_limit
         ):
             raise BudgetExceeded("Pending work plus this job exceeds the project budget")
-        payload.update(estimated_cost=estimate, confirmed=confirmed)
+        payload.update(
+            estimated_cost=estimate,
+            confirmed=confirmed,
+            llm_route=route_snapshot(self.runtime.settings, role),
+        )
         job_id = self.runtime.queue.submit(
             "api",
             name,

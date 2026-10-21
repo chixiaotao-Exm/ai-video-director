@@ -72,10 +72,29 @@ def test_submission_queues_prompt_only_sheet_and_snapshots_image_model(runtime: 
     assert job.job_type == "character_sheet"
     assert job.node_id is None and job.project_id == pid
     assert job.model_key == "sheet-test-model"
+    chosen = submit_character_sheet(
+        runtime,
+        pid,
+        "Bea",
+        "An original illustrated botanist",
+        image_provider="grok",
+        image_model="grok-imagine-image-2.0",
+    )
+    chosen_job = runtime.queue.get(chosen)
+    assert chosen_job is not None
+    assert chosen_job.model_key == "grok-imagine-image-2.0"
+    assert chosen_job.payload["recipe"]["_execution"] == {
+        "image_provider": "grok",
+        "image_model": "grok-imagine-image-2.0",
+    }
+    with pytest.raises(ValueError, match="still-image"):
+        submit_character_sheet(
+            runtime, pid, "Cy", "An original illustrated botanist", image_model="grok-imagine-video"
+        )
     assert job.payload["recipe"] == {
         "character_sheet": True,
         "appearance_prompt": "An original illustrated botanist",
-        "_execution": {"image_model": "sheet-test-model"},
+        "_execution": {"image_provider": "openai", "image_model": "sheet-test-model"},
     }
     assert job.payload["name"] == "Ada"
     assert job.payload["context"] == job.payload["inputs"] == {}
@@ -182,3 +201,40 @@ def test_submission_rejects_empty_character_details(
     with pytest.raises(ValueError, match="required"):
         submit_character_sheet(runtime, pid, name, prompt)
     assert runtime.queue.list(project_id=pid) == []
+
+
+def test_actual_image_model_is_committed_before_a_failed_provider_call(
+    runtime: Runtime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from avd.jobs.execution import execution_data
+
+    pid = project_id(runtime)
+    job_id = submit_character_sheet(runtime, pid, "Ada", "An original illustrated botanist")
+    runtime.settings.image_model = "different-current-default"
+    job = runtime.queue.claim_next("api")
+    assert job is not None
+    calls = []
+
+    class FailingImage:
+        def generate(self, **kwargs):
+            calls.append(kwargs)
+            # Read from a different session during dispatch: evidence must already be durable.
+            saved = runtime.queue.get(job_id)
+            execution = execution_data(saved)
+            assert execution["source"] == "actual"
+            assert execution["provider"] == "openai"
+            assert execution["model"] == "sheet-test-model"
+            assert execution["attempt"] == 1
+            raise RuntimeError("explicit offline provider failure")
+
+    monkeypatch.setattr("avd.llm.images.build_image_backend", lambda *args: FailingImage())
+    handler = runtime.build_registry().get("character_sheet")
+    assert handler is not None
+    with pytest.raises(RuntimeError, match="offline provider failure"):
+        handler(job)
+    assert len(calls) == 1 and calls[0]["model"] == "sheet-test-model"
+    saved = runtime.queue.get(job_id)
+    assert saved.payload["_execution_steps"][0]["source"] == "actual"
+    assert saved.payload["_started_paid_attempts"] == [1]
+    with runtime.session_factory() as session:
+        assert list(session.scalars(select(Character))) == []

@@ -1,6 +1,7 @@
 import {api} from '../api.js';
 import {h, button, link, field, input, select, form, section, pageHeader, badge, date, formatDuration, empty} from '../components.js';
 import {t} from '../i18n/zh.js';
+import {jobExecution, jobFailure, jobCopyButton, jobErrorDetails, jobListUpdater, jobsDiagnosticText, copyDiagnosticText} from '../jobExecution.js';
 
 const LANES = ['gpu', 'api', 'cpu'];
 const PAGE_SIZE = 30;
@@ -11,8 +12,8 @@ export async function render(ctx) {
   let serial = 0;
   let loading = false;
   let hasNext = false;
-  const rows = new Map();
   const body = h('tbody');
+  const rowUpdater = jobListUpdater(body, jobRow, {signal: ctx.signal});
   const statusLine = h('p', {class: 'muted', role: 'status', 'aria-live': 'polite'});
   const workerSummary = h('div', {class: 'toolbar'});
   const workerLabels = new Map();
@@ -58,55 +59,25 @@ export async function render(ctx) {
     pageHeader(t('jobs.title'), t('jobs.subtitle'), button(t('jobs.refresh'), () => refresh())),
     section(t('jobs.workers'), workerSummary),
     section(t('jobs.filterTitle'), filterForm),
-    section(t('jobs.queueTitle'), statusLine, table, emptyState, h('div', {class: 'toolbar'}, previous, pageLabel, next)),
+    section(t('jobs.queueTitle'), h('div', {class: 'toolbar'}, button('复制当前筛选页全部', () => copyDiagnosticText(jobsDiagnosticText(rowUpdater.jobs, `任务队列 · 当前筛选第 ${Math.floor(offset / PAGE_SIZE) + 1} 页（最多 ${PAGE_SIZE} 项）`)), {small: true})), statusLine, table, emptyState, h('div', {class: 'toolbar'}, previous, pageLabel, next)),
   );
 
   function jobRow(job) {
-    let item = rows.get(job.id);
-    if (!item) {
-      const project = h('td');
-      const typeText = h('span');
-      const errorText = h('pre', {style: 'white-space:pre-wrap;overflow-wrap:anywhere;max-width:32rem'});
-      const error = h('details', {class: 'details'}, h('summary', {}, t('jobs.viewError')), errorText);
-      const type = h('td', {}, h('div', {class: 'stack'}, typeText, h('small', {class: 'muted', title: job.id}, job.id.slice(0, 8)), error));
-      const lane = h('td');
-      const model = h('td');
-      const status = h('td');
-      const attempts = h('td');
-      const duration = h('td');
-      const created = h('td');
-      const actions = h('td');
-      const row = h('tr', {dataset: {jobId: job.id}}, project, type, lane, model, status, attempts, duration, created, actions);
-      item = {row, project, typeText, error, errorText, lane, model, status, attempts, duration, created, actions, value: {}};
-      rows.set(job.id, item);
+    const actions = h('div', {class: 'stack'}, jobCopyButton(job));
+    if (['queued', 'failed'].includes(job.status)) {
+      const action = job.status === 'queued' ? 'cancel' : 'retry';
+      actions.append(button(t(`jobs.${action}`), async () => {
+        await api(`/jobs/${encodeURIComponent(job.id)}/${action}`, {method: 'POST'});
+        await refresh();
+        statusLine.textContent = t(`jobs.${action}Success`);
+      }, {small: true, danger: action === 'cancel'}));
     }
-    const previousValue = item.value;
-    if (previousValue.project_id !== job.project_id || previousValue.project_title !== job.project_title) {
-      item.project.replaceChildren(job.project_id ? link(job.project_title || job.project_id.slice(0, 8), `#/projects/${encodeURIComponent(job.project_id)}`) : t('jobs.noProject'));
-    }
-    item.typeText.textContent = job.job_type;
-    item.lane.textContent = job.lane.toUpperCase();
-    item.model.textContent = job.model_key || '—';
-    item.model.style.overflowWrap = 'anywhere';
-    item.error.hidden = !job.error;
-    if (previousValue.error !== job.error) item.errorText.textContent = job.error || '';
-    item.attempts.textContent = `${job.attempts} / ${job.max_attempts}`;
-    item.duration.textContent = formatDuration(job.duration_seconds);
-    item.created.textContent = date(job.created_at);
-    if (previousValue.status !== job.status) {
-      item.status.replaceChildren(badge(job.status));
-      item.actions.replaceChildren();
-      if (['queued', 'failed'].includes(job.status)) {
-        const action = job.status === 'queued' ? 'cancel' : 'retry';
-        item.actions.append(button(t(`jobs.${action}`), async () => {
-          await api(`/jobs/${encodeURIComponent(job.id)}/${action}`, {method: 'POST'});
-          await refresh();
-          statusLine.textContent = t(`jobs.${action}Success`);
-        }, {small: true, danger: action === 'cancel'}));
-      } else item.actions.textContent = '—';
-    }
-    item.value = job;
-    return item.row;
+    return h('tr', {dataset: {jobId: job.id}},
+      h('td', {}, job.project_id ? link(job.project_title || job.project_id.slice(0, 8), `#/projects/${encodeURIComponent(job.project_id)}`) : t('jobs.noProject')),
+      h('td', {style: 'max-width:32rem'}, h('div', {class: 'stack'}, h('span', {}, job.job_type), h('small', {class: 'muted', title: job.id}, job.id.slice(0, 8)), jobFailure(job), jobErrorDetails(job))),
+      h('td', {}, job.lane.toUpperCase()), h('td', {style: 'overflow-wrap:anywhere'}, jobExecution(job)),
+      h('td', {}, badge(job.status)), h('td', {}, `${job.attempts} / ${job.max_attempts}`),
+      h('td', {}, formatDuration(job.duration_seconds)), h('td', {}, date(job.created_at)), h('td', {}, actions));
   }
 
   async function refresh() {
@@ -129,16 +100,7 @@ export async function render(ctx) {
       }
       hasNext = data.length > PAGE_SIZE;
       const page = data.slice(0, PAGE_SIZE);
-      const active = document.activeElement;
-      const visible = new Set(page.map(job => job.id));
-      for (const [id, item] of rows) if (!visible.has(id)) { item.row.remove(); rows.delete(id); }
-      let anchor = body.firstElementChild;
-      for (const job of page) {
-        const row = jobRow(job);
-        if (row === anchor) anchor = anchor.nextElementSibling;
-        else body.insertBefore(row, anchor);
-      }
-      if (active?.isConnected && document.activeElement !== active) active.focus?.({preventScroll: true});
+      rowUpdater.update(page);
       table.hidden = page.length === 0;
       emptyState.hidden = page.length !== 0;
       previous.disabled = offset === 0;

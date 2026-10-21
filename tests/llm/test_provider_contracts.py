@@ -243,7 +243,10 @@ def test_live_adapter_passes_relay_url_to_lazy_sdk(
         if url_key == "http_options"
         else "https://relay.invalid"
     )
-    assert factory.calls == [{"api_key": "offline-test-key", url_key: expected_url}]
+    expected = {"api_key": "offline-test-key", url_key: expected_url}
+    if module_name in {"openai", "anthropic"}:
+        expected["max_retries"] = 0
+    assert factory.calls == [expected]
 
 
 def test_two_invalid_structured_responses_are_both_billed_and_stop_retrying() -> None:

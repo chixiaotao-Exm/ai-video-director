@@ -266,8 +266,9 @@ class JobQueue:
     def recover_stale(self, *, force: bool = False) -> int:
         """Recover expired leases; force only after all prior workers have stopped.
 
-        Legacy running rows with no lease are also stale. Active leases are left
-        alone unless the caller explicitly confirms exclusive recovery via force.
+        Legacy running rows with no lease are also stale. Remote GPU attempts
+        remain quarantined until exclusive recovery confirms their server work
+        stopped. Active leases are otherwise left alone unless force is explicit.
         """
 
         with self.session_factory() as session:
@@ -280,6 +281,26 @@ class JobQueue:
                 )
             stale_jobs = list(session.scalars(statement).all())
             for job in stale_jobs:
+                if (
+                    not force
+                    and job.lane == JobLane.GPU
+                    and job.job_type in {"motion_video", "performance_lipsync"}
+                ):
+                    recipe = job.payload.get("recipe")
+                    profile = recipe.get("comfyui_profile") if isinstance(recipe, dict) else None
+                    server = profile.get("base_url") if isinstance(profile, dict) else None
+                    job.claim_token = str(uuid.uuid4())
+                    job.lease_expires_at = datetime.max.replace(tzinfo=timezone.utc)
+                    job.error = (
+                        "Remote ComfyUI execution was not verified stopped after the worker lease "
+                        "expired; manual recovery required. GPU lane remains held. "
+                        f"Inspect the frozen server {server or 'in recipe.comfyui_profile'} and "
+                        "remote-submission.json under this job's data_dir/output_dir. "
+                        "Confirm the associated remote prompt has finished or stop only that "
+                        "prompt. Only after no related execution remains, stop all AVD workers "
+                        "and run avd worker --lane gpu --recover-stale --once for exclusive recovery."
+                    )
+                    continue
                 job.started_at = None
                 job.claim_token = None
                 job.lease_expires_at = None
